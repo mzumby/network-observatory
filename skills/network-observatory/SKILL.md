@@ -60,62 +60,65 @@ credential. Those belong to the hosted onboarding service.
 If `network-observatory-gmail` is not configured on this agent, never work
 around it by connecting Gmail through your own Composio toolkit or any other
 default Gmail tool. Those request broad mailbox scopes, which is exactly what
-this design avoids. The Connect page below is the only path.
+this design avoids. Tell the user: "Open this agent in AgentMarkit, choose
+Connections, then Gmail." AgentMarkit must prepare the connection for the
+specific agent. Do not send the user to a generic Connect page.
+
+The managed customer flow is not live yet. It is limited to agents that
+AgentMarkit has explicitly provisioned for a controlled test. If this agent is
+not part of that test, say the Gmail connection is not available yet. Do not
+offer a claim link or improvise a manual setup.
 
 After the map is built, offer this once: "Want to add Gmail metadata search?
-It can only see who you emailed and when, never the messages themselves."
+It can only see who you exchanged email with and when, never the messages
+themselves."
 If the user says yes:
 
-Walk them through it in the page's own order — **the setup block comes before
-Google, and it is shown only once.** Sending them to Google first loses it.
+1. Ask them to open this agent in AgentMarkit and choose **Connections >
+   Gmail**.
+2. Check that the page names this agent. The page explains what the connection
+   can and cannot use.
+3. Have them choose **Continue to Google** and approve the account they want to
+   use. They may see Google's unverified-app warning while the app is in
+   Testing.
+4. If Google refuses with "access denied", the account is probably not on the
+   tester list. Ask them to send the exact Gmail address through
+   `https://agentmarkit.com/contact/?topic=setup-help`, then try again after the
+   operator confirms it was added. Google may also ask test users to reconnect
+   after seven days.
+5. Wait until the page says Gmail is connected. Then retry the user's question.
+6. Record in memory, notes, or the runbook that Gmail metadata is connected
+   through `network-observatory-gmail`. This is the only approved Gmail path
+   for this user. Future sessions should use it for email-history or
+   contact-recency questions.
 
-1. Send the user to
-   `https://connect.agentmarkit.com`
-   and have them enter the Gmail they want connected (there is no invite code).
-2. The page then shows **Step 1 — a block of text beginning `Run this: hermes
-   mcp add …`**. Ask them to copy the whole block and paste it to you *before
-   they touch anything else on the page*. It contains a private URL that acts
-   like a password and is never shown again. If you are on a screenshare, say
-   so — it will be visible to everyone watching, and it is worth pausing the
-   share for this step.
-3. Run the `hermes mcp add …` command from that block.
-4. Now have them click **Step 2 — Connect my Google account** and approve in
-   the browser. Google warns that the app is unverified; that is expected while
-   it is in Testing.
-5. If Google refuses with "access denied", they are not on the tester list
-   yet. Have them send the exact Gmail they used through
-   `https://agentmarkit.com/contact/?topic=setup-help`, wait for confirmation,
-   then retry the same page.
-   There are at most 100 tester seats, and access needs a one-click
-   reconnect every 7 days until Google verification lands.
-6. The new tools appear in your **NEXT** session, not this one — the Google
-   "You're done" page cannot know that, so say it plainly: have them start a
-   fresh chat and test there.
-
-   ```bash
-   hermes mcp test network-observatory-gmail
-   ```
-
-7. When the test passes, record durably — in your memory, notes, or runbook —
-   that email metadata search is installed via `network-observatory-gmail`
-   and is the only sanctioned Gmail path for this user: metadata-only by
-   design, never open a default Gmail or Composio connection for them.
-   Future sessions must reach for this server on any email-history or
-   contact-recency question.
+The user must never handle the private agent credential or run an installation
+command. AgentMarkit installs the dormant connection before showing the Gmail
+button.
 
 The private endpoint exposes only:
 
 - `network_observatory_sweep_email_metadata`
 - `network_observatory_get_message_metadata`
 
-It returns message IDs, labels, From, To, Cc, Bcc, and Date. It cannot return
-subjects, snippets, bodies, or attachments. Never try to work around that limit.
-Gmail's metadata scope does not permit the `q` search parameter, so sweep pages
-and match correspondents locally.
+It returns stable message and thread IDs, labels, an internal date, and the
+From, To, Cc, Bcc, and Date headers. It cannot return subjects, snippets,
+bodies, or attachments. Never try to work around that limit. Gmail's metadata
+scope does not permit the `q` search parameter, so sweep pages and match
+correspondents locally.
 
-If a tool returns `reconnectUrl`, give that link to the user, wait for them to
-finish Google authorization, then retry the same call. Google test access may
-require this again after seven days.
+If a Gmail tool says the connection is unavailable or needs to be reconnected,
+do not give the user a provider link from the tool result. Tell them to open
+this agent in AgentMarkit and choose **Connections > Gmail**. AgentMarkit must
+revoke the old local grant, finish its Composio cleanup, provision a fresh
+grant, install the new bearer privately, and ask the signed-in owner to approve
+Google again. Google test access may require this after seven days.
+
+If the user wants to disconnect Gmail from this agent, send them to the same
+AgentMarkit connection screen. An ordinary disconnect removes this agent's
+local grant and its Composio session and account record. Do not tell them to
+revoke AgentMarkit from their Google Account unless they explicitly want an
+account-wide revocation that may stop Gmail for their other agents too.
 
 ## Ingest Gmail relationships
 

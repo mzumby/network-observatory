@@ -1,6 +1,6 @@
 import { deleteSession } from "@/lib/composio";
 import { secretMatches } from "@/lib/crypto";
-import { listAccess, revokeMcpToken } from "@/lib/database";
+import { listAccess, listAgentConnections, revokeMcpToken } from "@/lib/database";
 import { requireRuntimeConfig } from "@/lib/runtime";
 
 export const dynamic = "force-dynamic";
@@ -25,8 +25,8 @@ export async function GET(request: Request) {
   if (!(await authorized(request, runtime.INVITE_ADMIN_TOKEN))) {
     return reply({ error: "Unauthorized" }, 401);
   }
-  const result = await listAccess();
-  return reply({ access: result.results });
+  const [legacy, agents] = await Promise.all([listAccess(), listAgentConnections()]);
+  return reply({ access: legacy.results, agentConnections: agents.results });
 }
 
 export async function DELETE(request: Request) {

@@ -1,3 +1,4 @@
+import { GMAIL_METADATA_SCOPE } from "@/lib/composio";
 import { runtimeEnv } from "@/lib/runtime";
 
 export const dynamic = "force-dynamic";
@@ -13,10 +14,17 @@ export async function GET() {
 
   return Response.json(
     {
-      ok: true,
+      ok: configured,
       configured,
-      gmailScope: "https://www.googleapis.com/auth/gmail.metadata",
-      mode: "open-beta-tester-gated",
+      gmailPermission: {
+        declared: GMAIL_METADATA_SCOPE,
+        check: "Run the protected admin preflight before rollout.",
+      },
+      callbackVerifier: {
+        path: "/api/connections/verify",
+        check: "Confirm it is enabled in the Composio project before rollout.",
+      },
+      mode: "agent-claim",
     },
     {
       headers: {

@@ -254,11 +254,13 @@ and when subjects may be pulled. First run needs an OAuth client JSON at
 
 **Hosted agents (Hermes/Agent37): skip the local OAuth script.** Prefer the
 Network Observatory Connect service described in `skills/network-observatory/SKILL.md`.
-It creates one private, revocable MCP endpoint per tester through the operator's
+It creates one private, revocable connection per agent through the operator's
 custom Composio Gmail auth config. The project credential stays on the server,
-and the endpoint returns only allowlisted sender, recipient, date, label, and ID
-metadata. Feed those events to `trellis.py ingest` as described in
-`skills/email-recency.md`.
+and the connection returns only allowlisted sender, recipient, date, label, and
+ID metadata. Feed those events to `trellis.py ingest` as described in
+`skills/email-recency.md`. The managed customer flow is not live yet. Unless
+the agent is part of the controlled Day test, say Gmail connection is not
+available rather than improvising a setup.
 
 ## Updating the tool
 

@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX `agent_connections_active_installation_unique` ON `agent_connections` (`installation_ref`) WHERE "agent_connections"."revoked_at" IS NULL;

@@ -1,8 +1,8 @@
 # Reset the custom Gmail integration in Composio
 
 This guide recreates the Network Observatory Gmail integration under a new
-Composio account and a new Google Cloud project. It also explains how to give
-each person a private connection that they can use with their own agents.
+Composio account and a new Google Cloud project. It also explains how
+AgentMarkit gives each provisioned agent its own private connection.
 
 The integration is deliberately narrower than a normal Gmail connection:
 
@@ -21,8 +21,8 @@ second safety layer. Keep both.
 | Google Cloud project | You or your company | Yes | Gmail API, consent screen, OAuth client |
 | Composio Platform project | You or your company | Yes | API key, Gmail auth config, users, sessions |
 | Gmail auth config | Your Composio project | Yes, for every user | Google client ID, client secret, allowed scope |
-| Gmail connection | One person | No | That person's authorization to their Gmail |
-| Private Observatory MCP URL | One person | Only across that person's trusted agents | A bearer credential for that person's connection |
+| Gmail authorization | One connection grant | No | That person's approval for the named agent and grant |
+| Private Observatory gateway credential | One agent | No | Access from that agent to the person's connection |
 
 The Google account that owns the Cloud project does not have to be the Gmail
 account an agent inspects. The owner account creates the OAuth app. Each user
@@ -35,11 +35,11 @@ one Google OAuth app
         |
 one reusable Composio Gmail auth config
         |
-one private Gmail connection per person
+one private Composio identity per connection grant
         |
-one private Observatory MCP URL per person
+one private Observatory gateway credential per agent
         |
-that person's Hermes or other MCP-capable agents
+the named agent
 ```
 
 Do not create one shared Gmail connection for everyone. Do not give users the
@@ -130,7 +130,7 @@ If the app is **External** and its publishing status is **Testing**:
 3. Enter your own Gmail address and each tester's exact Gmail address.
 4. Click **Save**.
 
-Do this before sending someone the Connect page. The Connect page cannot add
+Do this before a controlled connection test. The Connect service cannot add
 Google test users for you.
 
 Google refresh tokens for an External app in Testing normally expire after
@@ -167,8 +167,12 @@ Leave this Composio page open while you create the Google client.
 5. Give it a clear name, such as `Composio Network Observatory`.
 6. Under **Authorized redirect URIs**, click **Add URI**.
 7. Paste the exact redirect URI copied from the Composio auth-config screen.
-8. Click **Create**.
-9. Copy the **Client ID** and **Client secret** into a password manager or
+8. Leave **Authorized JavaScript origins** empty. This OAuth client is used for
+   Composio's server-side redirect, so it does not need a browser origin. If
+   Composio's current dashboard explicitly asks for an origin in the future,
+   follow that live instruction instead.
+9. Click **Create**.
+10. Copy the **Client ID** and **Client secret** into a password manager or
    secret manager. Do not put either value in the repository or this guide.
 
 The application type must be **Web application**. Google's Gmail quickstarts
@@ -193,7 +197,7 @@ callback needs a Web application client.
 
 This auth config is a reusable blueprint. Do not click **Connect Account** for
 each real user. That button creates a Playground test connection. Network
-Observatory creates real user-scoped sessions and connection links itself.
+Observatory creates grant-scoped sessions through its server API.
 
 ## Part 7: Create the Composio project API key
 
@@ -217,6 +221,30 @@ Do not confuse the two kinds of scope:
 - The Gmail OAuth scope controls what Google permits.
 - Composio API-key permissions control which Composio APIs the Worker can call.
 
+### Enable callback identity verification
+
+In the same Composio Platform project, follow this exact path:
+
+**Platform > Settings > General > Configuration > enable Callback identity
+verification**
+
+Set the verification URL to:
+
+```text
+https://connect.agentmarkit.com/api/connections/verify
+```
+
+This setting applies to the whole Composio project, not just the Gmail auth
+config. Every connection in that project will use the configured verifier. Use
+a dedicated Platform project for Network Observatory unless the other
+integrations in the project are built for the same callback.
+
+Composio must be able to reach the verification URL over public HTTPS.
+`localhost` and private network addresses will not work. For local testing,
+expose the local callback through a temporary HTTPS tunnel and put the tunnel's
+public `/api/connections/verify` URL in this setting. Restore the hosted URL
+before the controlled Day test.
+
 ## Part 8: Choose how to cut over from the old account
 
 The current Worker stores Composio session IDs in Cloudflare D1. Those session
@@ -233,7 +261,8 @@ Use a side-by-side deployment:
 3. Give the new Worker its own URL and set the new Composio key and auth-config
    ID there.
 4. Test your own Gmail from start to finish.
-5. Move users to newly provisioned private URLs one at a time.
+5. Provision new agent grants one at a time and move each agent to its new
+   private bearer.
 6. Retire the old deployment only after every active user has moved.
 
 This requires a small Cloudflare configuration change in the repository. It is
@@ -248,10 +277,11 @@ Use an in-place reset:
    `onboarding/wrangler.jsonc` with the new `ac_...` value.
 2. Replace the Worker's `COMPOSIO_API_KEY` secret with the new project key.
 3. Deploy the Worker.
-4. Re-provision every user through the Connect page.
+4. Re-provision each agent and have its owner reconnect from AgentMarkit.
 
-All old private MCP URLs should be treated as obsolete after this switch. The
-users must create and install new ones.
+Treat every old MCP bearer as obsolete after this switch. AgentMarkit must
+provision and install a fresh grant for each agent, then the owner approves
+Google again.
 
 ## Part 9: Update and deploy Network Observatory
 
@@ -297,7 +327,7 @@ file, issue, or chat. Let Wrangler prompt for it.
    npm run deploy:cloudflare
    ```
 
-9. Check the health endpoint:
+9. Check the public health endpoint:
 
    ```bash
    curl https://connect.agentmarkit.com/api/health
@@ -309,91 +339,153 @@ The response should include:
 {
   "ok": true,
   "configured": true,
-  "gmailScope": "https://www.googleapis.com/auth/gmail.metadata"
+  "gmailPermission": {
+    "declared": "https://www.googleapis.com/auth/gmail.metadata",
+    "check": "Run the protected admin preflight before rollout."
+  },
+  "callbackVerifier": {
+    "path": "/api/connections/verify",
+    "check": "Confirm it is enabled in the Composio project before rollout."
+  },
+  "mode": "agent-claim"
 }
 ```
+
+This route checks only the Worker's local configuration. It does not call
+Composio, inspect the live auth config, or prove that callback identity
+verification is enabled. Do not use it as the launch check.
+
+10. Load `INVITE_ADMIN_TOKEN` from AgentMarkit's server-side secret store and
+    run the protected preflight:
+
+   ```bash
+   curl --fail-with-body --silent --show-error \
+     -H "Authorization: Bearer ${INVITE_ADMIN_TOKEN}" \
+     https://connect.agentmarkit.com/api/admin/preflight
+   ```
+
+The protected route calls Composio. Require HTTP 200, `ok: true`, and every
+entry under `checks` to be `true`. It confirms that the selected auth config is
+custom OAuth2 for Gmail, enabled for Tool Router, and limited to the one
+`gmail.metadata` permission.
+
+`INVITE_ADMIN_TOKEN` is a high-privilege provisioning secret. With it, a caller
+can create or revoke grants. A caller can also repeat an idempotent create with
+the same fields and recover the exact MCP bearer credential. Keep the
+AgentMarkit copy only in AgentMarkit's server-side secret store. The Connect
+Worker holds the matching runtime secret. Never put it in a browser, agent,
+customer machine, repository, chat, analytics service, or command log.
 
 For a side-by-side deployment, use the new Worker URL in the final health
 check. Do not run the in-place secret replacement against the old Worker.
 
-## Part 10: Test the whole flow yourself
+## Part 10: Run the controlled Day test
 
-Do not rely only on the Composio Playground. Test the same path a real user
-will follow.
+Do not rely only on the Composio Playground. This test checks the new
+connection path on Day, but it is not a production customer test.
 
-1. Confirm your Gmail address is in Google Auth platform > **Audience** >
+1. Confirm **Callback identity verification** is enabled in the Composio
+   project and points to the hosted verifier URL.
+2. Run the protected preflight and require HTTP 200 with every check set to
+   `true`.
+3. Confirm your Gmail address is in Google Auth platform > **Audience** >
    **Test users**.
-2. Open the Network Observatory Connect page.
-3. Enter the exact Gmail address you added as a test user.
-4. Click **Create my connection**.
-5. Copy the entire agent setup block before doing anything else.
-6. Paste the block into a private Hermes chat and let Hermes run the command.
-7. Return to the Connect page and approve the Google connection.
-8. Start a new Hermes chat.
-9. Run:
-
-   ```bash
-   hermes mcp test network-observatory-gmail
-   ```
-
-10. Ask the agent a metadata-only question, such as, “Which people have I
-    exchanged email with most recently?”
-11. Confirm the returned information contains addresses, dates, labels, and
-    stable Gmail IDs only. It must not contain subject lines, snippets, message
-    bodies, or attachments.
+4. Create a dormant connection for Day through the provisioning API.
+5. Install the fixed gateway URL and returned bearer token on Day through the
+   private provisioning channel. Put the token in an Authorization header, not
+   the URL. Do not put it in a browser, chat, shell command, or command log.
+6. Probe the installed connection and confirm it lists exactly the two approved
+   Gmail metadata tools.
+7. Mark the connection installed. The API now returns Day's short-lived claim
+   link.
+8. Open the claim link privately in the same browser that will finish Google
+   authorization. Do not forward it.
+9. Check that the page says **Connect Gmail to Day**, then choose **Continue to
+   Google**.
+10. Approve your test Gmail account and wait for the page to confirm the
+   connection.
+11. Ask Day a metadata-only question, such as, "Which people have I exchanged
+   email with most recently?"
+12. Confirm the result contains addresses, dates, labels, and stable Gmail IDs
+    only. It must not contain subject lines, snippets, message bodies, or
+    attachments.
+13. Restart Day and repeat the question so the backfill path is tested across a
+    fresh agent session.
+14. Revoke Day's grant, finish the Composio cleanup, and confirm the old bearer
+    no longer works.
 
 In Composio, use **Platform** > **Users**, **Sessions**, and **Logs** to confirm
-that the test created a user-scoped session and that calls are reaching the
+that the test created a grant-scoped session and that calls are reaching the
 new project.
 
-## Part 11: Onboard each person
+The claim URL proves possession, not AgentMarkit ownership. Someone can forward
+it before it is opened, and the recipient can connect their Google account to
+the named agent. Production is blocked until AgentMarkit authenticates the
+signed-in owner and binds that owner and agent to the callback with a signed,
+short-lived assertion or an equivalent server-side check. Deliver that proof
+server-to-server or bind it to the signed-in AgentMarkit session. Putting
+another bearer token in the link does not solve the forwarding problem.
 
-### What you do first
+## Part 11: Planned customer onboarding
 
-1. Ask for the exact Gmail address they want connected.
-2. Add it in Google Cloud under **Google Auth platform** > **Audience** >
-   **Test users**.
-3. Send them the Connect page URL in a private message.
+Do not use this section as a live customer runbook until the AgentMarkit owner
+binding above is implemented and tested.
+
+### What AgentMarkit does first
+
+1. Create a dormant connection when the agent is provisioned.
+2. Install its private gateway credential through the machine's secret channel.
+3. Confirm the two approved tools are available.
+4. Mark the connection installed. The agent's **Connect Gmail** action then
+   verifies the signed-in owner and creates an owner-bound handoff to Connect.
+
+During the testing period, the operator must also add the person's exact Gmail
+address under **Google Auth platform > Audience > Test users**.
 
 ### What the person does
 
-1. Opens the Connect page.
-2. Enters the exact Gmail address you added.
-3. Clicks **Create my connection**.
-4. Copies the whole setup block. It is shown once and contains a private URL.
-5. Pastes that block into their agent.
-6. Approves Google when the Connect page sends them to the consent flow.
-7. Starts a new agent session.
-8. Tests `network-observatory-gmail`.
+1. Opens their agent in AgentMarkit.
+2. Chooses **Connections > Gmail**.
+3. Checks the short explanation of what the agent can access.
+4. Chooses **Continue to Google** and approves their account.
+5. Waits for the page to confirm the connection.
+6. Returns to the agent and asks a simple email-recency question.
 
-Behind the scenes, the shared auth config is reused, but the person gets a
-separate pseudonymous Composio user, session, Gmail authorization, and private
-Observatory bearer URL.
+Behind the scenes, the shared auth config is reused. The person gets a
+pseudonymous Composio user, and the agent gets its own revocable gateway
+credential. The customer never sees that credential.
 
-## Let someone use it with all their agents
+## Let someone connect more than one agent
 
-The safest simple rule is:
+Provision each agent separately. Each one gets its own gateway credential and
+its own **Connect Gmail** button. Never copy a credential from one agent to
+another.
 
-> One private endpoint belongs to one person. That person may install it in
-> their own trusted agents. Never share it between people.
+Turning off Gmail for Day stops Day without changing another agent.
+AgentMarkit keeps the credential and installation record. The customer only
+sees the account approval page.
 
-For Hermes, the setup block already contains the exact command:
+## Disconnect and reconnect
 
-```bash
-hermes mcp add network-observatory-gmail --url "PRIVATE_MCP_URL"
-```
+An ordinary per-agent disconnect revokes the local AgentMarkit grant first. It
+then deletes that grant's Composio Tool Router session and connected-account
+record. It does not revoke the upstream OAuth grant at Google. That boundary
+matters when one Google account is connected to more than one agent.
 
-They can run the same command on each Hermes agent they own. For another
-MCP-capable agent, add a remote Streamable HTTP MCP server named
-`network-observatory-gmail` and use the same private URL.
+Revoking the AgentMarkit app from the person's Google Account is a separate,
+account-wide action. It may stop every agent using that Google account through
+the same Google project and client. Use it only when the person explicitly asks
+to revoke Google access for the account.
 
-Treat that URL like a password. Anyone who has it can use the person's Gmail
-metadata connection until the URL expires or is revoked.
+To reconnect one agent:
 
-If you need to revoke one agent without interrupting the person's other agents,
-issue a separate private endpoint per agent. The current Connect page does not
-ask for an agent name, so keep a private record of which endpoint or session
-belongs to which agent. Adding agent labels is a sensible future product change.
+1. Revoke the old local grant.
+2. Retry cleanup until the old Composio session and connected-account record
+   are deleted.
+3. Provision a fresh grant and install its new private bearer on the agent.
+4. Send the signed-in owner through the new claim and Google approval flow.
+
+Do not reuse the old claim, Composio session, connected account, or bearer.
 
 ## Troubleshooting
 
@@ -420,9 +512,10 @@ also check that it permits session writes and proxy execution.
 
 ### It worked, then stopped about a week later
 
-That is expected while an External Google app remains in Testing. Follow the
-fresh reconnect URL returned by the agent, approve Google again, and retry.
-The private Observatory MCP URL stays the same.
+That is expected while an External Google app remains in Testing. Open the
+agent's Gmail connection in AgentMarkit. AgentMarkit must revoke the old grant,
+finish its Composio cleanup, create a fresh grant, install the new bearer
+privately, and ask the owner to approve Google again.
 
 ### The agent sees message content
 
@@ -445,10 +538,24 @@ reconnect affected accounts so Google issues fresh authorization.
 - [ ] The Google OAuth client is a Web application.
 - [ ] Its authorized redirect URI exactly matches Composio.
 - [ ] The Composio key and auth config belong to the same Platform project.
-- [ ] The Worker health endpoint reports `configured: true`.
-- [ ] A real end-to-end user connection works.
+- [ ] Composio callback identity verification is enabled at **Platform >
+      Settings > General > Configuration**.
+- [ ] The verifier is the public HTTPS URL
+      `https://connect.agentmarkit.com/api/connections/verify`.
+- [ ] The Worker health endpoint reports `configured: true`, with the
+      understanding that this checks local settings only.
+- [ ] The protected admin preflight returns HTTP 200 and every check is `true`.
+- [ ] `INVITE_ADMIN_TOKEN` exists only in the Connect Worker and AgentMarkit's
+      server-side secret store.
+- [ ] The controlled Day connection works from approval through a live metadata
+      query.
 - [ ] The agent receives metadata but no subject, snippet, body, or attachment.
-- [ ] Every person receives their private endpoint privately.
+- [ ] Every agent has its own private gateway credential.
+- [ ] No gateway credential appears in a browser, chat, analytics, or command log.
+- [ ] AgentMarkit authenticates the signed-in owner and binds that owner and
+      agent to the callback. A claim URL alone does not satisfy this check.
+- [ ] Until that binding passes, testing is limited to the controlled Day run
+      and nobody describes the flow as live.
 - [ ] The old deployment remains available until migration is complete, or all
       users understand that their old endpoints have been replaced.
 
@@ -458,6 +565,7 @@ reconnect affected accounts so Google issues fresh authorization.
 - [Composio: managed versus custom authentication](https://docs.composio.dev/docs/authentication/custom-app-vs-managed-app)
 - [Composio: current Platform auth-config navigation](https://docs.composio.dev/kb/guide/dashboard-auth-configs-navigation)
 - [Composio: current project settings and API-key navigation](https://docs.composio.dev/kb/guide/dashboard-project-settings-navigation)
+- [Composio: callback identity verification](https://docs.composio.dev/reference/api-reference/connected-accounts)
 - [Google: configure the OAuth consent screen and scopes](https://developers.google.com/workspace/guides/configure-oauth-consent)
 - [Google: Gmail scope definitions and verification categories](https://developers.google.com/workspace/gmail/api/auth/scopes)
 - [Google: OAuth refresh-token expiration](https://developers.google.com/identity/protocols/oauth2#expiration)

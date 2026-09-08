@@ -60,9 +60,14 @@ for making your own).
 
 `email_recency.py` is for agents on the user's own computer. If you are a
 hosted agent (Hermes, Agent37), do not set up OAuth here and do not ask the
-user for a client JSON, Google secret, or Composio key. Use the tester's private
-Network Observatory MCP endpoint. It keeps connector credentials on the hosted
-service and exposes only two metadata tools.
+user for a client JSON, Google secret, or Composio key. Use the private Network
+Observatory connection provisioned for this specific agent. It keeps connector
+credentials on the hosted service and exposes only two metadata tools.
+
+The managed customer flow is not live yet. Use it only on an agent that
+AgentMarkit has explicitly provisioned for the controlled Day test. Otherwise,
+tell the user Gmail connection is not available yet. Do not share a setup link,
+gateway credential, or manual command.
 
 The flow on a hosted agent:
 
@@ -89,9 +94,11 @@ is safe: already-seen events are skipped. After ingest, `trellis.py recall`,
 script would have produced. Store who and when, not what was said.
 
 The hosted tools cannot return subject, snippet, body, or attachments. If a
-call returns `reconnectUrl`, send it privately to the user, wait for them to
-finish, then retry. While the Google OAuth app remains in Testing, this may be
-needed again after seven days.
+tool says Gmail needs to be reconnected, tell the user to open this agent in
+AgentMarkit and choose **Connections > Gmail**. AgentMarkit must remove the old
+grant, finish its Composio cleanup, provision a fresh grant, and ask the
+signed-in owner to approve Google again. While the Google OAuth app remains in
+Testing, this may be needed again after seven days.
 
 ## Design credit
 

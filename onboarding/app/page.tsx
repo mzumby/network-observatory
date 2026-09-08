@@ -1,266 +1,309 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 
-type Setup = {
-  connectUrl: string;
-  mcpUrl: string;
-  hermesCommand: string | null;
-  hermesConfig: string | null;
-  note: string;
+const DISCLOSURE_VERSION = "gmail-metadata-v1";
+const FLOW_TAB_KEY = "agentmarkit_gmail_flow";
+
+type Connection = {
+  connectionId: string;
+  agentName: string;
+  state: "waiting" | "authorizing" | "connected" | "needs_reconnect";
+  expiresAt: string;
+  returnUrl: string | null;
 };
 
-export default function Home() {
-  const [email, setEmail] = useState("");
-  const [setup, setSetup] = useState<Setup | null>(null);
-  const [error, setError] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [googleDisclosureAccepted, setGoogleDisclosureAccepted] = useState(false);
-  const hermesSetup = useMemo(
-    () => setup?.hermesCommand || setup?.hermesConfig || "",
-    [setup],
-  );
+// React runs effects twice in development. Keep the one-time claim exchange
+// alive between those effect runs so the first request is not cancelled after
+// the URL fragment has already been removed.
+let pendingClaimExchange: Promise<void> | null = null;
 
-  // The Google consent flow leaves this page, and the setup command is shown
-  // exactly once (the server keeps only a hash). Losing it on "back" strands
-  // the user, so keep it for the life of this browser tab.
-  useEffect(() => {
-    const saved = sessionStorage.getItem("netobs-setup");
-    if (saved) {
-      try {
-        setSetup(JSON.parse(saved) as Setup);
-      } catch {
-        sessionStorage.removeItem("netobs-setup");
-      }
+class ConnectionPageError extends Error {}
+
+function exchangeClaim(token: string) {
+  return fetch("/api/connections/claim", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ token }),
+  }).then(async (response) => {
+    const data = (await response.json()) as { error?: string; tabToken?: string };
+    if (!response.ok || !data.tabToken?.startsWith("tab_")) {
+      throw new ConnectionPageError(data.error || "This setup link is not working.");
     }
+    window.sessionStorage.setItem(FLOW_TAB_KEY, data.tabToken);
+  });
+}
+
+function flowHeader() {
+  return { "x-agentmarkit-flow": window.sessionStorage.getItem(FLOW_TAB_KEY) || "" };
+}
+
+type PageState =
+  | { kind: "missing" }
+  | { kind: "loading" }
+  | { kind: "ready"; connection: Connection }
+  | { kind: "error"; message: string };
+
+function Brand() {
+  return (
+    <a className="wordmark" href="https://agentmarkit.com/" aria-label="AgentMarkit home">
+      AgentMar<span>kit</span>
+    </a>
+  );
+}
+
+export default function Home() {
+  const [page, setPage] = useState<PageState>({ kind: "loading" });
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    const claimToken = new URLSearchParams(window.location.hash.slice(1)).get("claim");
+    if (claimToken && !pendingClaimExchange) {
+      pendingClaimExchange = exchangeClaim(claimToken);
+    }
+    if (claimToken) {
+      window.history.replaceState(
+        null,
+        "",
+        `${window.location.pathname}${window.location.search}`,
+      );
+    }
+    const problem = new URLSearchParams(window.location.search).get("problem");
+    const controller = new AbortController();
+    let stopped = false;
+    async function loadConnection() {
+      if (problem) {
+        const messages: Record<string, string> = {
+          "invalid-link": "This link is not valid.",
+          "expired-link": "This link has expired.",
+          "used-link": "This link has already been used.",
+          "not-ready": "Your agent is still being set up.",
+          "identity-check": "Open the Gmail connection from the same browser tab where you started.",
+          "verification-failed": "Google could not confirm this connection.",
+        };
+        if (!stopped) {
+          setPage({
+            kind: "error",
+            message: messages[problem] || "This link is not working.",
+          });
+        }
+        return;
+      }
+      if (pendingClaimExchange) await pendingClaimExchange;
+
+      const response = await fetch("/api/connections/current", {
+        cache: "no-store",
+        headers: flowHeader(),
+        signal: controller.signal,
+      });
+      if (response.status === 401) {
+        if (!stopped) setPage({ kind: "missing" });
+        return;
+      }
+      const data = (await response.json().catch(() => null)) as
+        | (Connection & { error?: string })
+        | null;
+      if (!response.ok || !data) {
+        throw new ConnectionPageError(
+          data?.error || "This setup link is not working.",
+        );
+      }
+      if (!stopped) setPage({ kind: "ready", connection: data });
+    }
+
+    loadConnection().catch((cause) => {
+        if (stopped) return;
+        if (cause instanceof DOMException && cause.name === "AbortError") return;
+        setPage({
+          kind: "error",
+          message:
+            cause instanceof ConnectionPageError
+              ? cause.message
+              : "We could not open this Gmail connection. Try again from AgentMarkit.",
+        });
+      });
+
+    return () => {
+      stopped = true;
+      controller.abort();
+    };
   }, []);
 
-  function startOver() {
-    sessionStorage.removeItem("netobs-setup");
-    setSetup(null);
-    setEmail("");
-    setGoogleDisclosureAccepted(false);
-  }
-
-  async function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  async function continueToGoogle() {
+    if (page.kind !== "ready") return;
     setBusy(true);
     setError("");
-    setSetup(null);
     try {
-      const response = await fetch("/api/provision", {
+      const response = await fetch("/api/connections/authorize", {
         method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ email }),
+        headers: { "content-type": "application/json", ...flowHeader() },
+        body: JSON.stringify({
+          connectionId: page.connection.connectionId,
+          accepted: true,
+          disclosureVersion: DISCLOSURE_VERSION,
+        }),
       });
-      const data = (await response.json()) as Setup & { error?: string };
-      if (!response.ok) throw new Error(data.error || "Setup failed.");
-      sessionStorage.setItem("netobs-setup", JSON.stringify(data));
-      setSetup(data);
+      const data = (await response.json().catch(() => null)) as
+        | { connectUrl?: string; error?: string }
+        | null;
+      if (!response.ok || !data?.connectUrl) {
+        throw new ConnectionPageError(
+          data?.error || "Google could not be opened. Try again.",
+        );
+      }
+      window.location.assign(data.connectUrl);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Setup failed.");
-    } finally {
+      setError(
+        cause instanceof ConnectionPageError
+          ? cause.message
+          : "Google could not be opened. Check your connection and try again.",
+      );
       setBusy(false);
     }
   }
 
-  async function copySetup() {
-    if (hermesSetup) await navigator.clipboard.writeText(hermesSetup);
-  }
-
   return (
-    <main>
-      <header className="topbar">
-        <a className="wordmark" href="https://agentmarkit.com/">
-          AgentMarkit Network Observatory
+    <div className="site-frame">
+      <header className="site-header">
+        <Brand />
+        <a className="header-link" href="https://agentmarkit.com/manage/">
+          My agents
         </a>
-        <span className="status">Private enrichment setup</span>
       </header>
 
-      <section className="hero">
-        <div className="eyebrow">Your network, with a little more memory</div>
-        <h1>Connect Gmail without handing over your inbox.</h1>
-        <p className="lede">
-          Your LinkedIn map already works on its own. This optional connection lets
-          your Hermes agent see who you exchanged email with and when. Message bodies
-          and attachments stay out of the Observatory.
-        </p>
-      </section>
+      <main className="connection-page">
+        {page.kind === "loading" ? (
+          <section className="connection-sheet status-sheet" aria-live="polite">
+            <p>Checking your setup link...</p>
+          </section>
+        ) : null}
 
-      <section className="setup-grid" aria-label="Gmail enrichment setup">
-        <div className="steps">
-          <div className="step">
-            <span>01</span>
-            <div>
-              <h2>Sign in</h2>
-              <p>
-                Enter the Gmail you want connected. Use the exact address
-                because that is what Google checks. While this is in testing,
-                each address must be approved before it will work. If yours
-                has not been approved, Google will stop the connection.
-              </p>
+        {page.kind === "missing" ? (
+          <section className="connection-sheet">
+            <p className="section-label">Gmail connection</p>
+            <h1>Connect Gmail to your agent</h1>
+            <p className="intro">
+              To connect Gmail, open your agent in AgentMarkit and choose Connections,
+              then Gmail.
+            </p>
+            <a className="primary-action" href="https://agentmarkit.com/manage/">
+              Open my agents
+            </a>
+          </section>
+        ) : null}
+
+        {page.kind === "error" ? (
+          <section className="connection-sheet">
+            <p className="section-label">Gmail connection</p>
+            <h1>This setup link is not working</h1>
+            <p className="intro">{page.message}</p>
+            <p className="help-copy">
+              Open your agent in AgentMarkit and start again from its Connections page.
+            </p>
+            <a className="primary-action" href="https://agentmarkit.com/manage/">
+              Open my agents
+            </a>
+          </section>
+        ) : null}
+
+        {page.kind === "ready" && page.connection.state === "connected" ? (
+          <section className="connection-sheet">
+            <p className="section-label connected-label">Connected</p>
+            <h1>Gmail is connected to {page.connection.agentName}</h1>
+            <p className="intro">
+              {page.connection.agentName} can see who you exchanged email with and
+              when. It cannot read what your messages say.
+            </p>
+            <a className="primary-action" href={page.connection.returnUrl || "https://agentmarkit.com/manage/"}>
+              Back to {page.connection.agentName}
+            </a>
+          </section>
+        ) : null}
+
+        {page.kind === "ready" && page.connection.state === "needs_reconnect" ? (
+          <section className="connection-sheet">
+            <p className="section-label">Gmail connection</p>
+            <h1>Reconnect Gmail to {page.connection.agentName}</h1>
+            <p className="intro">
+              This Gmail connection has stopped working. Open this agent in AgentMarkit
+              to reconnect it.
+            </p>
+            <a
+              className="primary-action"
+              href={page.connection.returnUrl || "https://agentmarkit.com/manage/"}
+            >
+              Back to {page.connection.agentName}
+            </a>
+          </section>
+        ) : null}
+
+        {page.kind === "ready" &&
+        (page.connection.state === "waiting" || page.connection.state === "authorizing") ? (
+          <section className="connection-sheet">
+            <p className="section-label">Gmail connection</p>
+            <h1>Connect Gmail to {page.connection.agentName}</h1>
+            <p className="intro">
+              {page.connection.agentName} can see who you exchanged email with and
+              when. It cannot read what your messages say.
+            </p>
+
+            <div className="permission-grid" aria-label="What this connection allows">
+              <section>
+                <h2>{page.connection.agentName} can use</h2>
+                <ul>
+                  <li>The people on each email, including Cc and Bcc recipients</li>
+                  <li>The date and Gmail labels</li>
+                </ul>
+              </section>
+              <section>
+                <h2>{page.connection.agentName} cannot</h2>
+                <ul>
+                  <li>Read subjects, messages, previews, or attachments</li>
+                  <li>Create, send, delete, label, archive, or change email</li>
+                </ul>
+              </section>
             </div>
-          </div>
-          <div className="step">
-            <span>02</span>
-            <div>
-              <h2>Give your agent the setup command</h2>
-              <p>
-                The page shows it once. Copy it and paste it to your agent
-                before anything else; it's your private endpoint, connecting
-                only your agent and your Gmail.
-              </p>
-            </div>
-          </div>
-          <div className="step">
-            <span>03</span>
-            <div>
-              <h2>Approve Google</h2>
-              <p>
-                The test app is currently unverified, so Google shows a warning.
-                Review the app name and requested access before continuing. If
-                Google says access is denied, use the AgentMarkit contact form
-                to ask whether your exact Gmail is on the tester list. While the
-                app is in testing, you will reconnect every seven days.
-              </p>
-            </div>
-          </div>
-        </div>
 
-        <div className="panel">
-          {!setup ? (
-            <form onSubmit={submit}>
-              <label htmlFor="email">Google account email</label>
-              <input
-                id="email"
-                type="email"
-                autoComplete="email"
-                value={email}
-                onChange={(event) => setEmail(event.target.value)}
-                placeholder="you@example.com"
-                required
-              />
+            <p className="testing-note">
+              This connection is still in testing. Only Google accounts we have approved
+              can connect. Google may ask you to reconnect after seven days.
+            </p>
 
-              {error ? <p className="error" role="alert">{error}</p> : null}
-              <button type="submit" disabled={busy}>
-                {busy ? "Creating your private session…" : "Create my connection"}
-              </button>
-              <p className="fineprint">
-                Your email is converted to a private identifier. The onboarding
-                service does not store it in plain text.
-              </p>
-            </form>
-          ) : (
-            <div className="success" aria-live="polite">
-              <div className="success-mark">Ready</div>
-              <h2>Two steps, in order.</h2>
-              <ol className="success-steps">
-                <li>
-                  <div className="code-wrap">
-                    <div className="code-label">Step 1: Copy this and paste it to your agent</div>
-                    <pre>{hermesSetup}</pre>
-                    <button className="secondary" type="button" onClick={copySetup}>
-                      Copy setup
-                    </button>
-                  </div>
-                  <p>
-                    Do this first. For your security it is shown only once, so
-                    put it somewhere safe (your agent chat is perfect) before
-                    moving on.
-                  </p>
-                </li>
-                <li>
-                  <section className="google-disclosure" aria-labelledby="google-disclosure-title">
-                    <h3 id="google-disclosure-title">Before you connect Google</h3>
-                    <p>
-                      Your agent will get only From, To, Cc, Bcc, Date, labels,
-                      internal date, and stable Gmail message or thread IDs. It
-                      will not get subjects, snippets, message bodies, or
-                      attachments, and it cannot send, edit, or delete email.
-                    </p>
-                    <p>
-                      This information is used to answer your requests about
-                      relationship history and communication recency. The request
-                      travels through Composio and the AgentMarkit gateway to your
-                      agent's rented machine. If your selected model needs the
-                      result to answer, it receives the filtered result too.
-                    </p>
-                    <p>
-                      Composio stores the Google authorization. AgentMarkit does
-                      not keep returned Gmail metadata in its gateway database.
-                      Your agent can save the filtered result in its chat, files,
-                      or relationship memory, and the hosting provider's encrypted
-                      backup can include those copies.
-                    </p>
-                    <p>
-                      You can revoke future access and request deletion of the
-                      connector session. Copies saved by your agent must be
-                      deleted from the agent workspace separately. Read the{" "}
-                      <a href="https://agentmarkit.com/privacy/" target="_blank" rel="noopener noreferrer">privacy policy</a>
-                      {" "}and{" "}
-                      <a href="https://agentmarkit.com/data-controls/#google-controls" target="_blank" rel="noopener noreferrer">Google data controls</a>.
-                    </p>
-                    <label className="google-consent">
-                      <input
-                        type="checkbox"
-                        checked={googleDisclosureAccepted}
-                        onChange={(event) => setGoogleDisclosureAccepted(event.target.checked)}
-                      />
-                      <span>
-                        I understand this data path and want to connect this Gmail
-                        account to my agent for this purpose.
-                      </span>
-                    </label>
-                  </section>
-                  <a
-                    className="primary-link"
-                    href={googleDisclosureAccepted ? setup.connectUrl : undefined}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    aria-disabled={!googleDisclosureAccepted}
-                    onClick={(event) => {
-                      if (!googleDisclosureAccepted) event.preventDefault();
-                    }}
-                  >
-                    Step 2: Connect my Google account
-                  </a>
-                  <p>
-                    Opens in a new tab. Approve the Google screen there and
-                    you are done; your agent's connection starts working the
-                    moment you approve.
-                  </p>
-                </li>
-              </ol>
-              <p className="fineprint">{setup.note}</p>
-              <button className="linklike" type="button" onClick={startOver}>
-                Start over with a different account
-              </button>
-            </div>
-          )}
-        </div>
-      </section>
+            {error ? <p className="error" role="alert">{error}</p> : null}
 
-      <section className="trust">
-        <div>
-          <strong>LinkedIn remains the source of truth.</strong>
-          <span>Gmail is optional enrichment, never a requirement.</span>
-        </div>
-        <div>
-          <strong>Identity decisions stay reversible.</strong>
-          <span>Potential duplicates wait for human confirmation.</span>
-        </div>
-        <div>
-          <strong>Your inbox is not a knowledge base.</strong>
-          <span>The Observatory keeps relationship timing, not correspondence.</span>
-        </div>
-      </section>
+            <button className="primary-action" type="button" onClick={continueToGoogle} disabled={busy}>
+              {busy ? "Opening Google..." : "Continue to Google"}
+            </button>
 
-      <footer>
-        <a href="https://agentmarkit.com/privacy/">
-          Privacy and Google data use
-        </a>
-        <span>Built for small, trusted testing while Google verification is pending.</span>
+            <details>
+              <summary>How your information is handled</summary>
+              <div className="details-copy">
+                <p>
+                  We use Composio to handle the connection with Google. When you ask a
+                  related question, {page.connection.agentName} can receive the people,
+                  dates, and labels described above. It also receives Gmail&apos;s internal
+                  date and stable message and thread IDs. Those IDs help it find the
+                  right record, but they do not contain the email itself.
+                </p>
+                <p>
+                  Disconnecting stops future access. It does not delete notes that
+                  {page.connection.agentName} has already saved.
+                </p>
+              </div>
+            </details>
+          </section>
+        ) : null}
+      </main>
+
+      <footer className="site-footer">
+        <span>Only the agent you choose gets this connection.</span>
+        <nav aria-label="Legal">
+          <a href="https://agentmarkit.com/privacy/">Privacy</a>
+          <a href="https://agentmarkit.com/data-controls/#google-controls">Google data controls</a>
+          <a href="https://agentmarkit.com/contact/?topic=setup-help">Get help</a>
+        </nav>
       </footer>
-    </main>
+    </div>
   );
 }

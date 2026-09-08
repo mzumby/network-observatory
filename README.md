@@ -36,9 +36,9 @@ https://raw.githubusercontent.com/maczumby/network-observatory/main/skills/netwo
 
 The LinkedIn map needs nothing from anyone: your export in, your map out, all
 on your machine. The optional Gmail piece uses a metadata-only connection
-(sender, recipients, date; Google's servers refuse this connection message
-bodies). While Google verification is pending, your Gmail address needs to be
-on the operator's tester list; your agent will tell you what to do if it isn't.
+(sender, recipients, and date). This connection cannot request message bodies.
+While Google verification is pending, your Gmail address needs to be on the
+operator's tester list. Your agent will tell you what to do if it is not.
 
 ## The fastest way to use it
 
@@ -74,23 +74,31 @@ hermes skills install \
   --yes
 ```
 
-The public repo does not contain baked-in authentication. That is intentional:
-every person authorizes their own Gmail account. Signing in at the Connect page
-creates a separate Composio user and a private, revocable MCP endpoint for their
-Hermes. Your Composio API key and Google client secret remain on the hosted
-service and are never given to the tester or committed to GitHub.
+The public repo does not contain baked-in authentication. That is intentional.
+The AgentMarkit flow is designed to prepare a private, revocable connection for
+one named agent, then let its owner approve Google. The customer never handles a
+gateway credential, terminal command, or copy and paste step.
 
-Tester onboarding is self-serve at
-[Network Observatory Connect](https://connect.agentmarkit.com):
-sign in with the Gmail you want connected. The only gate is Google's tester
-list, which the operator controls; if Google denies access, send the operator
-the exact Gmail you used and retry once you're added.
+This flow is not live for customers yet. The current one-time setup link can be
+forwarded to someone else before it is opened. That is acceptable only for the
+controlled Day test. Production is blocked until AgentMarkit authenticates the
+signed-in owner and binds that owner and agent to the Google callback.
+
+Once that binding exists, the owner will open the agent in AgentMarkit, choose
+**Connections > Gmail**, review the narrow access, and continue to Google. The
+Composio API key, Google client secret, and agent gateway credential stay on the
+hosted services.
+
+While the Google app is in Testing, the account being connected must be on the
+operator's tester list. If Google denies access, the owner should contact the
+operator with the exact Gmail address they chose, then try again after it is
+added.
 
 Gmail is still optional. The hosted endpoint can return only sender, recipients,
-date, labels, and stable message IDs. It cannot return subjects, snippets,
-bodies, or attachments. Google may require test users to reconnect after seven
-days while the OAuth app remains in Testing. Operator setup and revocation are
-documented in `docs/COMPOSIO_ONBOARDING.md`.
+date, labels, and stable message and thread IDs. It cannot return subjects,
+snippets, bodies, or attachments. Google may require test users to reconnect
+after seven days while the OAuth app remains in Testing. Operator setup and
+revocation are documented in `docs/COMPOSIO_ONBOARDING.md`.
 
 ## Or run it yourself
 
