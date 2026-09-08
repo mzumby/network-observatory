@@ -258,6 +258,60 @@ button:disabled { cursor: wait; opacity: 0.65; }
 
 .primary-link { width: 100%; margin: 24px 0; }
 
+.primary-link[aria-disabled="true"] {
+  pointer-events: none;
+  opacity: 0.48;
+}
+
+.google-disclosure {
+  margin-top: 22px;
+  padding: 18px;
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--brand);
+  border-radius: 10px;
+  background: #f8f4ec;
+}
+
+.google-disclosure h3 {
+  margin: 0 0 10px;
+  font-size: 17px;
+  letter-spacing: -0.02em;
+}
+
+.google-disclosure p {
+  margin: 10px 0 0;
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.google-disclosure a {
+  color: var(--link);
+  text-underline-offset: 2px;
+}
+
+.google-consent {
+  margin: 16px 0 0;
+  padding-top: 14px;
+  display: grid;
+  grid-template-columns: 18px 1fr;
+  gap: 10px;
+  align-items: start;
+  border-top: 1px solid var(--border);
+  cursor: pointer;
+}
+
+.google-consent input {
+  width: 18px;
+  height: 18px;
+  margin: 2px 0 0;
+  accent-color: var(--brand);
+}
+
+.google-consent span {
+  font-size: 13px;
+  line-height: 1.5;
+}
+
 .code-wrap {
   padding: 16px;
   border: 1px solid var(--border);

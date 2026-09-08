@@ -1,13 +1,27 @@
 {
   "$schema": "./node_modules/wrangler/config-schema.json",
-  "name": "network-observatory-connect",
-  "workers_dev": true,
+  "name": "agentmarkit-network-observatory-connect",
+  "account_id": "1e8cfc7ef84fbb46a6efa51fe89822e8",
+  "workers_dev": false,
   "preview_urls": false,
+  "routes": [
+    {
+      "pattern": "connect.agentmarkit.com",
+      "custom_domain": true
+    }
+  ],
   "main": "./dist/server/index.js",
   "compatibility_date": "2026-05-15",
   "compatibility_flags": ["nodejs_compat"],
   "vars": {
-    "COMPOSIO_GMAIL_AUTH_CONFIG_ID": "ac_OsnNT3NHbX_b"
+    "COMPOSIO_GMAIL_AUTH_CONFIG_ID": "ac_L1ocbuUoUtaE"
+  },
+  "secrets": {
+    "required": [
+      "COMPOSIO_API_KEY",
+      "INVITE_ADMIN_TOKEN",
+      "IDENTITY_PEPPER"
+    ]
   },
   "assets": {
     "directory": "./dist/client",
@@ -16,8 +30,8 @@
   "d1_databases": [
     {
       "binding": "DB",
-      "database_name": "network-observatory-connect",
-      "database_id": "8e1bf0e4-3f12-43f3-9c46-f0c7512e8d3a",
+      "database_name": "agentmarkit-network-observatory-connect",
+      "database_id": "c9e88bce-f694-4a6b-80c9-79109cb494aa",
       "migrations_dir": "./drizzle"
     }
   ],

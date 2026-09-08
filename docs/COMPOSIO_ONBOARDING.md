@@ -1,5 +1,9 @@
 # Composio onboarding operations
 
+For a complete rebuild under a new Composio account or Google Cloud project,
+including the current click-by-click setup and user handoff, see
+[`COMPOSIO_CUSTOM_GMAIL_RESET_GUIDE.md`](./COMPOSIO_CUSTOM_GMAIL_RESET_GUIDE.md).
+
 The public repository never contains a Composio key, Google client secret, or
 shared Google token. The hosted Connect service keeps the project credential on
 the server and gives each tester a separate, revocable endpoint.

@@ -15,6 +15,7 @@ export default function Home() {
   const [setup, setSetup] = useState<Setup | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [googleDisclosureAccepted, setGoogleDisclosureAccepted] = useState(false);
   const hermesSetup = useMemo(
     () => setup?.hermesCommand || setup?.hermesConfig || "",
     [setup],
@@ -38,6 +39,7 @@ export default function Home() {
     sessionStorage.removeItem("netobs-setup");
     setSetup(null);
     setEmail("");
+    setGoogleDisclosureAccepted(false);
   }
 
   async function submit(event: FormEvent<HTMLFormElement>) {
@@ -69,8 +71,8 @@ export default function Home() {
   return (
     <main>
       <header className="topbar">
-        <a className="wordmark" href="https://github.com/maczumby/network-observatory">
-          Network Observatory
+        <a className="wordmark" href="https://agentmarkit.com/">
+          AgentMarkit Network Observatory
         </a>
         <span className="status">Private enrichment setup</span>
       </header>
@@ -92,11 +94,10 @@ export default function Home() {
             <div>
               <h2>Sign in</h2>
               <p>
-                Enter the Gmail you want connected &mdash; the exact address,
-                since that&rsquo;s what Google checks. While this is in beta,
-                Mari adds each address by hand before it will work. If she
-                hasn&rsquo;t added yours yet, you&rsquo;ll get as far as
-                Google and be turned away; step 03 says what to do then.
+                Enter the Gmail you want connected. Use the exact address
+                because that is what Google checks. While this is in testing,
+                each address must be approved before it will work. If yours
+                has not been approved, Google will stop the connection.
               </p>
             </div>
           </div>
@@ -117,10 +118,10 @@ export default function Home() {
               <h2>Approve Google</h2>
               <p>
                 The test app is currently unverified, so Google shows a warning.
-                That's expected. If Google says access is denied, you're not on
-                the tester list yet: send Mari the exact Gmail you used, then
-                retry this page. While the app is in testing, you'll reconnect
-                every seven days.
+                Review the app name and requested access before continuing. If
+                Google says access is denied, use the AgentMarkit contact form
+                to ask whether your exact Gmail is on the tester list. While the
+                app is in testing, you will reconnect every seven days.
               </p>
             </div>
           </div>
@@ -156,7 +157,7 @@ export default function Home() {
               <ol className="success-steps">
                 <li>
                   <div className="code-wrap">
-                    <div className="code-label">Step 1 — Copy this and paste it to your agent</div>
+                    <div className="code-label">Step 1: Copy this and paste it to your agent</div>
                     <pre>{hermesSetup}</pre>
                     <button className="secondary" type="button" onClick={copySetup}>
                       Copy setup
@@ -169,13 +170,59 @@ export default function Home() {
                   </p>
                 </li>
                 <li>
+                  <section className="google-disclosure" aria-labelledby="google-disclosure-title">
+                    <h3 id="google-disclosure-title">Before you connect Google</h3>
+                    <p>
+                      Your agent will get only From, To, Cc, Bcc, Date, labels,
+                      internal date, and stable Gmail message or thread IDs. It
+                      will not get subjects, snippets, message bodies, or
+                      attachments, and it cannot send, edit, or delete email.
+                    </p>
+                    <p>
+                      This information is used to answer your requests about
+                      relationship history and communication recency. The request
+                      travels through Composio and the AgentMarkit gateway to your
+                      agent's rented machine. If your selected model needs the
+                      result to answer, it receives the filtered result too.
+                    </p>
+                    <p>
+                      Composio stores the Google authorization. AgentMarkit does
+                      not keep returned Gmail metadata in its gateway database.
+                      Your agent can save the filtered result in its chat, files,
+                      or relationship memory, and the hosting provider's encrypted
+                      backup can include those copies.
+                    </p>
+                    <p>
+                      You can revoke future access and request deletion of the
+                      connector session. Copies saved by your agent must be
+                      deleted from the agent workspace separately. Read the{" "}
+                      <a href="https://agentmarkit.com/privacy/" target="_blank" rel="noopener noreferrer">privacy policy</a>
+                      {" "}and{" "}
+                      <a href="https://agentmarkit.com/data-controls/#google-controls" target="_blank" rel="noopener noreferrer">Google data controls</a>.
+                    </p>
+                    <label className="google-consent">
+                      <input
+                        type="checkbox"
+                        checked={googleDisclosureAccepted}
+                        onChange={(event) => setGoogleDisclosureAccepted(event.target.checked)}
+                      />
+                      <span>
+                        I understand this data path and want to connect this Gmail
+                        account to my agent for this purpose.
+                      </span>
+                    </label>
+                  </section>
                   <a
                     className="primary-link"
-                    href={setup.connectUrl}
+                    href={googleDisclosureAccepted ? setup.connectUrl : undefined}
                     target="_blank"
                     rel="noopener noreferrer"
+                    aria-disabled={!googleDisclosureAccepted}
+                    onClick={(event) => {
+                      if (!googleDisclosureAccepted) event.preventDefault();
+                    }}
                   >
-                    Step 2 — Connect my Google account
+                    Step 2: Connect my Google account
                   </a>
                   <p>
                     Opens in a new tab. Approve the Google screen there and
@@ -209,8 +256,8 @@ export default function Home() {
       </section>
 
       <footer>
-        <a href="https://github.com/maczumby/network-observatory">
-          View the public source
+        <a href="https://agentmarkit.com/privacy/">
+          Privacy and Google data use
         </a>
         <span>Built for small, trusted testing while Google verification is pending.</span>
       </footer>

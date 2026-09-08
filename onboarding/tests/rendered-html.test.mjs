@@ -13,21 +13,27 @@ test("ships the public onboarding page and privacy promises", async () => {
   assert.match(page, /Connect Gmail without handing over your inbox/);
   assert.match(page, /LinkedIn remains the source of truth/);
   assert.match(page, /Identity decisions stay reversible/);
-  assert.match(page, /View the public source/);
-  assert.match(page, /send Mari the exact Gmail you used/);
-  // No invite field: the tester list is the only gate (Mari, 7/31).
+  assert.match(page, /Privacy and Google data use/);
+  assert.doesNotMatch(page, /\bMari(?:\s+Zumbro)?\b|maczumby|mzvibe|mari@/i);
+  // No invite field: the Google tester list is the only gate.
   assert.doesNotMatch(page, /Invite code/);
-  // The one-time setup command must survive the Google round-trip (Mari lost
-  // hers to a same-tab navigation on 7/30), and copy-the-command comes FIRST
-  // so the unrecoverable step happens before leaving the page (Mari, 7/31).
+  // The one-time setup command must survive the Google round-trip. Copying it
+  // comes first so the unrecoverable step happens before leaving the page.
   assert.match(page, /sessionStorage\.setItem\("netobs-setup"/);
   assert.match(page, /target="_blank"/);
-  assert.match(page, /Step 1 — Copy this and paste it to your agent/);
-  assert.match(page, /Step 2 — Connect my Google account/);
+  assert.match(page, /Step 1: Copy this and paste it to your agent/);
+  assert.match(page, /Step 2: Connect my Google account/);
   assert.ok(
-    page.indexOf("Step 1 — Copy this") < page.indexOf("Step 2 — Connect my Google"),
+    page.indexOf("Step 1: Copy this") < page.indexOf("Step 2: Connect my Google"),
     "copy step must render before the Google step",
   );
+  assert.match(page, /Before you connect Google/);
+  assert.match(page, /subjects, snippets, message bodies, or/);
+  assert.match(page, /Composio stores the Google authorization/);
+  assert.match(page, /I understand this data path and want to connect this Gmail/);
+  assert.match(page, /href=\{googleDisclosureAccepted \? setup\.connectUrl : undefined\}/);
+  assert.match(page, /agentmarkit\.com\/privacy/);
+  assert.match(page, /agentmarkit\.com\/data-controls\/\#google-controls/);
   assert.doesNotMatch(page, /SkeletonPreview|react-loading-skeleton/);
   assert.doesNotMatch(packageJson, /react-loading-skeleton/);
 });

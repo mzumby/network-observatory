@@ -9,7 +9,7 @@ const inter = Inter({
 
 export const metadata: Metadata = {
   metadataBase: new URL(
-    "https://network-observatory-connect.mari-network-observatory.workers.dev",
+    "https://connect.agentmarkit.com",
   ),
   title: "Connect Gmail | Network Observatory",
   description:

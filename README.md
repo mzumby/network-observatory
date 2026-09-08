@@ -81,7 +81,7 @@ Hermes. Your Composio API key and Google client secret remain on the hosted
 service and are never given to the tester or committed to GitHub.
 
 Tester onboarding is self-serve at
-[Network Observatory Connect](https://network-observatory-connect.mari-network-observatory.workers.dev):
+[Network Observatory Connect](https://connect.agentmarkit.com):
 sign in with the Gmail you want connected. The only gate is Google's tester
 list, which the operator controls; if Google denies access, send the operator
 the exact Gmail you used and retry once you're added.

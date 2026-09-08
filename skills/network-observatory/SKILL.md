@@ -70,7 +70,7 @@ Walk them through it in the page's own order — **the setup block comes before
 Google, and it is shown only once.** Sending them to Google first loses it.
 
 1. Send the user to
-   `https://network-observatory-connect.mari-network-observatory.workers.dev`
+   `https://connect.agentmarkit.com`
    and have them enter the Gmail they want connected (there is no invite code).
 2. The page then shows **Step 1 — a block of text beginning `Run this: hermes
    mcp add …`**. Ask them to copy the whole block and paste it to you *before
@@ -83,8 +83,9 @@ Google, and it is shown only once.** Sending them to Google first loses it.
    the browser. Google warns that the app is unverified; that is expected while
    it is in Testing.
 5. If Google refuses with "access denied", they are not on the tester list
-   yet. Have them send the exact Gmail they used to the operator
-   (mari@filament.dm), wait for her confirmation, then retry the same page.
+   yet. Have them send the exact Gmail they used through
+   `https://agentmarkit.com/contact/?topic=setup-help`, wait for confirmation,
+   then retry the same page.
    There are at most 100 tester seats, and access needs a one-click
    reconnect every 7 days until Google verification lands.
 6. The new tools appear in your **NEXT** session, not this one — the Google
