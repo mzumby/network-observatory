@@ -299,16 +299,6 @@ export async function PATCH(request: Request) {
       );
     }
     const issuedAt = new Date().toISOString();
-    if (
-      record.claim_opened_at &&
-      (!record.browser_token_expires_at ||
-        record.browser_token_expires_at > issuedAt)
-    ) {
-      return reply(
-        { error: "Finish the Gmail connection already open in this browser." },
-        409,
-      );
-    }
     if (record.claim_opened_at || record.claim_expires_at <= issuedAt) {
       const handoffExpiresAt = new Date(
         new Date(issuedAt).getTime() + HANDOFF_SESSION_MS,

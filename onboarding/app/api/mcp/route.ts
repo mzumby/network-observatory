@@ -282,14 +282,14 @@ export async function POST(
   }
   const tokenHash = await sha256(token);
   const access = await getMcpAccess(tokenHash);
-  if (!access || access.kind !== "agent") {
+  if (!access) {
     return json({ error: "Unauthorized" }, 401);
   }
   const needsReconnect = Boolean(access.needs_reconnect_at);
   const authorizedSessionId =
     access.authorized_at && !needsReconnect ? access.session_id : null;
   const connection = {
-    id: access.connection_id || "",
+    id: access.connection_id,
     sessionId: authorizedSessionId,
     needsReconnect,
   };

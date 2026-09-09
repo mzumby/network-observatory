@@ -93,6 +93,7 @@ export async function POST(request: Request) {
       return reply(
         { error: "Finish the Gmail setup already open in this browser, then try again." },
         409,
+        clearHandoff,
       );
     }
   }

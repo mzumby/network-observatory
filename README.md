@@ -112,6 +112,15 @@ snippets, bodies, or attachments. Google may require test users to reconnect
 after seven days while the OAuth app remains in Testing. Operator setup and
 revocation are documented in `docs/COMPOSIO_ONBOARDING.md`.
 
+For operators, the AgentMarkit service is a side-by-side cutover to a new Worker
+and a new D1 database. A fresh database needs migrations `0000` through `0006`
+before deployment; deploying does not run them. Keep the old Worker, database,
+and Composio resources until every legacy `/api/mcp/[token]` agent has been
+re-provisioned, reconnected, and tested. Retiring the old service is a separate
+approved change. See
+[`docs/COMPOSIO_CUSTOM_GMAIL_RESET_GUIDE.md`](docs/COMPOSIO_CUSTOM_GMAIL_RESET_GUIDE.md)
+for the full runbook.
+
 ## Or run it yourself
 
 Two commands, no installation (Python 3 and a browser are all you need):

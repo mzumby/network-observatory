@@ -251,6 +251,17 @@ The current Worker stores Composio session IDs in Cloudflare D1. Those session
 IDs belong to the old Composio project. Changing the project API key does not
 migrate them.
 
+This rollout is side by side. The repository now points at a new Worker and a
+new D1 database for AgentMarkit. Deploying it creates or updates that new target.
+It does not upgrade, replace, or retire the old Worker and database.
+
+Before you deploy, make a private inventory of every agent still using the old
+service. Record the agent, owner, old endpoint, and whether it is still active.
+Legacy agents that use `/api/mcp/[token]` cannot use that URL on the new Worker.
+The new endpoint returns HTTP 410 Gone for that route. Each legacy agent needs a
+new agent-bound grant, a privately installed bearer, and a new Google approval
+through AgentMarkit.
+
 ### Recommended if anyone relies on the current connection
 
 Use a side-by-side deployment:
@@ -263,25 +274,23 @@ Use a side-by-side deployment:
 4. Test your own Gmail from start to finish.
 5. Provision new agent grants one at a time and move each agent to its new
    private bearer.
-6. Retire the old deployment only after every active user has moved.
+6. Check each migrated agent with a real metadata query, then mark it complete
+   in the inventory.
 
 This requires a small Cloudflare configuration change in the repository. It is
 safer than changing a live deployment in place because the old private URLs
 keep working during migration.
 
-### Faster if breaking every old private URL is acceptable
+### Retire the old service separately
 
-Use an in-place reset:
+Do not retire anything as part of the normal deploy. Keep the old Worker, D1
+database, Composio project, API key, and auth config available until the
+inventory shows that every legacy agent has moved.
 
-1. Replace the auth-config ID in
-   `onboarding/wrangler.jsonc` with the new `ac_...` value.
-2. Replace the Worker's `COMPOSIO_API_KEY` secret with the new project key.
-3. Deploy the Worker.
-4. Re-provision each agent and have its owner reconnect from AgentMarkit.
-
-Treat every old MCP bearer as obsolete after this switch. AgentMarkit must
-provision and install a fresh grant for each agent, then the owner approves
-Google again.
+Retirement is a separate change with its own review and explicit approval. That
+change may remove the old Worker, database, credentials, or Composio resources
+only after the final migration check. A deploy of the new service must never do
+that cleanup automatically.
 
 ## Part 9: Update and deploy Network Observatory
 
@@ -303,9 +312,16 @@ file, issue, or chat. Let Wrangler prompt for it.
    ```
 
 4. Paste the key only when Wrangler prompts.
-5. Keep the existing `IDENTITY_PEPPER` and `INVITE_ADMIN_TOKEN` during an
-   in-place reset. Rotating either one is a separate migration. For a completely
-   new Worker environment, create new values and store them as secrets.
+5. This is a fresh Worker with a fresh D1 database, so create new random values
+   for `IDENTITY_PEPPER` and `INVITE_ADMIN_TOKEN` and store them as Worker
+   secrets. Put the matching admin token in AgentMarkit's server-side secret
+   store. Once the D1 database has connection rows, keep the same pepper. It
+   derives private owner IDs and the credentials used for bearer recovery and
+   handoff reissue. Rotating it against an existing D1 database makes those
+   derived values disagree with the stored grants. An intentional rotation
+   therefore requires every affected agent to be re-provisioned and every owner
+   to reconnect. Treat that as a separate migration, not routine secret
+   rotation.
 6. Install dependencies and run the checks:
 
    ```bash
@@ -314,18 +330,25 @@ file, issue, or chat. Let Wrangler prompt for it.
    npm run test
    ```
 
-7. Apply the existing D1 migrations to a new database, or confirm they are
-   already applied to an existing one:
+7. Confirm that `wrangler.jsonc` names the new D1 database, then apply every
+   migration from `0000` through `0006` in order:
 
    ```bash
    npm run db:migrate:cloudflare
    ```
 
-8. Deploy:
+   A fresh D1 database has no earlier schema to build on. Do not start at `0002`.
+   Wrangler records completed migrations, so the same command is safe to run
+   again when you need to confirm the database is current.
+
+8. Deploy the new Worker:
 
    ```bash
    npm run deploy:cloudflare
    ```
+
+   Deploying the Worker does not run D1 migrations. Run step 7 first. This
+   command also does not retire the old Worker or delete its D1 database.
 
 9. Check the public health endpoint:
 
@@ -376,8 +399,8 @@ AgentMarkit copy only in AgentMarkit's server-side secret store. The Connect
 Worker holds the matching runtime secret. Never put it in a browser, agent,
 customer machine, repository, chat, analytics service, or command log.
 
-For a side-by-side deployment, use the new Worker URL in the final health
-check. Do not run the in-place secret replacement against the old Worker.
+Use the new Worker URL in the final health check. Do not replace secrets,
+apply migrations, or deploy code against the old Worker or its D1 database.
 
 ## Part 10: Run the controlled Day test
 
@@ -487,10 +510,9 @@ connection state without retrieving the MCP URL, MCP bearer, handoff token, or
 Connect address. The response contains only `connectionId`, `agentName`,
 `state`, `installed`, and `handoffExpiresAt`. A repeated handoff request returns
 the same active, unopened handoff. If it has expired, Network Observatory issues
-a new five-minute handoff. Once the browser opens it, another handoff request is
-refused while that two-hour browser flow remains active. If the browser flow is
-abandoned and expires before Google authorization starts, the authenticated
-AgentMarkit action can request a fresh handoff. If Google authorization already
+a new five-minute handoff. If the owner closes the Connect tab before Google
+authorization starts, choosing **Connect Gmail** again replaces the abandoned
+browser flow and invalidates its old tab tokens. If Google authorization already
 started, revoke the connection and create a new one.
 
 During the testing period, the operator must also add the person's exact Gmail
@@ -593,6 +615,13 @@ reconnect affected accounts so Google issues fresh authorization.
 - [ ] The Google OAuth client is a Web application.
 - [ ] Its authorized redirect URI exactly matches Composio.
 - [ ] The Composio key and auth config belong to the same Platform project.
+- [ ] The old Worker, D1 database, Composio project, key, and auth config have
+      been inventoried and left unchanged.
+- [ ] `wrangler.jsonc` points at the new Worker and new D1 database.
+- [ ] The fresh D1 database has migrations `0000` through `0006` applied before
+      the Worker is deployed. The deploy command does not apply them.
+- [ ] The new Worker uses a new `IDENTITY_PEPPER`. The value is saved for the
+      lifetime of this D1 database and is not treated as a routine rotation.
 - [ ] Composio callback identity verification is enabled at **Platform >
       Settings > General > Configuration**.
 - [ ] The verifier is the public HTTPS URL
@@ -627,16 +656,19 @@ reconnect affected accounts so Google issues fresh authorization.
       `x-agentmarkit-connection` value.
 - [ ] Two agent connection flows can remain open in separate tabs without
       replacing each other's cookies.
-- [ ] An opened flow blocks another handoff until its two-hour browser window
-      expires. If Google authorization never started, a fresh handoff works
-      after that expiry.
+- [ ] If an owner closes the Connect tab before Google authorization starts,
+      choosing **Connect Gmail** again replaces the abandoned flow immediately
+      and the old browser tokens no longer work.
 - [ ] A connection ID from another machine fails, and a consumed handoff cannot
       be used again.
 - [ ] The AgentMarkit companion pull request is merged and the full Day flow is
       tested before this Network Observatory pull request leaves draft.
 - [ ] Until those checks pass, nobody describes the flow as live.
-- [ ] The old deployment remains available until migration is complete, or all
-      users understand that their old endpoints have been replaced.
+- [ ] Every legacy `/api/mcp/[token]` agent has a new agent-bound grant, a newly
+      installed private bearer, a new Google approval, and a successful metadata
+      query on the new service.
+- [ ] Retirement of the old Worker, D1 database, and Composio resources is a
+      separate reviewed change with explicit approval.
 
 ## Official references
 

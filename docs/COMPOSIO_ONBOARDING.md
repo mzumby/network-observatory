@@ -105,6 +105,13 @@ identifiers, token hashes, Composio session IDs, connection status, and
 timestamps. It does not store plain email addresses, Google tokens, or raw
 gateway credentials.
 
+Treat `IDENTITY_PEPPER` as part of the D1 database's identity. Generate it once
+for a fresh database, then preserve it. The service uses it to derive private
+owner IDs and the credentials used for bearer recovery and handoff reissue. If
+you rotate it while keeping existing rows, those derived values no longer match
+the stored grants. An intentional rotation requires every affected agent to be
+re-provisioned and every owner to reconnect. Plan that as a separate migration.
+
 `INVITE_ADMIN_TOKEN` is a high-privilege provisioning credential. A caller with
 this token can create and revoke grants. It can also repeat an idempotent create
 request with the same fields and recover the exact MCP bearer credential. Keep
@@ -154,6 +161,32 @@ Google test authorizations may expire after seven days.
 
 For a full account reset, see
 [`COMPOSIO_CUSTOM_GMAIL_RESET_GUIDE.md`](./COMPOSIO_CUSTOM_GMAIL_RESET_GUIDE.md).
+
+## Deploy the new service beside the old one
+
+This rollout uses a new Worker, a new D1 database, and a new Composio project.
+It does not upgrade the old service in place. Before deploying, make a private
+inventory of every agent that still uses the old Worker.
+
+A fresh D1 database needs all migrations from `0000` through `0006`. The deploy
+command does not apply them. Confirm that `wrangler.jsonc` points at the new D1
+database, then run the migration command before the deploy command:
+
+```bash
+cd onboarding
+npm run db:migrate:cloudflare
+npm run deploy:cloudflare
+```
+
+The new Worker returns HTTP 410 Gone for the legacy `/api/mcp/[token]` and
+`/api/provision` routes. Move each legacy agent separately: create its
+agent-bound grant, install the new bearer through the private machine channel,
+have the owner reconnect Google, and verify a real metadata query.
+
+Keep the old Worker, D1 database, Composio project, key, and auth config intact
+until every legacy agent has passed that check. Retiring them is a separate,
+reviewed change that needs explicit approval. A normal deploy must never retire
+or delete the old service.
 
 ## Run the protected preflight
 
@@ -293,12 +326,11 @@ the API directly instead of using this operator helper.
 
 The server sets the handoff lifetime. There is no duration option. An active,
 unopened handoff is reused. An expired one is replaced the next time the
-authenticated AgentMarkit action requests a handoff. After a handoff is opened,
-new handoff requests are refused while its two-hour browser flow is active. If
-that browser flow expires before Google authorization starts, AgentMarkit can
-request a fresh five-minute handoff. Once Google authorization has started,
-revoke the connection and create a new one instead of reusing its Composio
-session.
+authenticated AgentMarkit action requests a handoff. If the owner closes the
+Connect tab before Google authorization starts, choosing **Connect Gmail** again
+replaces the abandoned browser flow and invalidates its old tab tokens. Once
+Google authorization has started, revoke the connection and create a new one
+instead of reusing its Composio session.
 
 ## Intended customer flow
 

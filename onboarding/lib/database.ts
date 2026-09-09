@@ -1,4 +1,5 @@
 import { runtimeEnv } from "./runtime";
+import { ISSUE_AGENT_CONNECTION_HANDOFF_SQL } from "./agent-connection-sql.mjs";
 
 export interface InviteRecord {
   token_hash: string;
@@ -49,10 +50,10 @@ export interface AgentConnectionRecord {
 }
 
 export type McpAccess = {
-  kind: "legacy" | "agent";
-  connection_id: string | null;
+  kind: "agent";
+  connection_id: string;
   session_id: string | null;
-  agent_name: string | null;
+  agent_name: string;
   authorized_at: string | null;
   needs_reconnect_at: string | null;
 };
@@ -170,26 +171,14 @@ export async function getMcpAccess(tokenHash: string): Promise<McpAccess | null>
       authorized_at: string | null;
       needs_reconnect_at: string | null;
     }>();
-  if (agent) {
-    return {
-      kind: "agent",
-      connection_id: agent.id,
-      session_id: agent.session_id,
-      agent_name: agent.agent_name,
-      authorized_at: agent.authorized_at,
-      needs_reconnect_at: agent.needs_reconnect_at,
-    };
-  }
-
-  const legacy = await getMcpToken(tokenHash);
-  return legacy
+  return agent
     ? {
-        kind: "legacy",
-        connection_id: null,
-        session_id: legacy.session_id,
-        agent_name: null,
-        authorized_at: legacy.created_at,
-        needs_reconnect_at: null,
+        kind: "agent",
+        connection_id: agent.id,
+        session_id: agent.session_id,
+        agent_name: agent.agent_name,
+        authorized_at: agent.authorized_at,
+        needs_reconnect_at: agent.needs_reconnect_at,
       }
     : null;
 }
@@ -258,6 +247,20 @@ export async function getAgentConnectionByBrowserIdentity(
     .first<AgentConnectionRecord>();
 }
 
+export async function getAgentConnectionStatusByBrowserIdentity(
+  browserTokenHash: string,
+  browserTabTokenHash: string,
+) {
+  return runtimeEnv().DB.prepare(
+    `SELECT ${AGENT_CONNECTION_COLUMNS}
+     FROM agent_connections
+     WHERE browser_token_hash = ? AND browser_tab_token_hash = ?
+       AND browser_token_expires_at > ?`,
+  )
+    .bind(browserTokenHash, browserTabTokenHash, new Date().toISOString())
+    .first<AgentConnectionRecord>();
+}
+
 export async function createAgentConnection(record: {
   id: string;
   requestId: string;
@@ -309,21 +312,9 @@ export async function issueAgentConnectionHandoff(
   issuedAt: string,
 ) {
   const result = await runtimeEnv().DB.prepare(
-    `UPDATE agent_connections
-     SET claim_token_hash = ?, claim_expires_at = ?, claim_opened_at = NULL,
-       browser_token_hash = NULL, browser_tab_token_hash = NULL,
-       browser_token_expires_at = NULL,
-       error_code = NULL
-     WHERE id = ? AND (
-         (claim_opened_at IS NULL AND claim_expires_at <= ?)
-         OR (claim_opened_at IS NOT NULL AND browser_token_expires_at IS NOT NULL
-           AND browser_token_expires_at <= ?)
-       )
-       AND installed_at IS NOT NULL AND session_id IS NULL
-       AND authorization_started_at IS NULL AND authorized_at IS NULL
-       AND revoked_at IS NULL`,
+    ISSUE_AGENT_CONNECTION_HANDOFF_SQL,
   )
-    .bind(handoffTokenHash, handoffExpiresAt, id, issuedAt, issuedAt)
+    .bind(handoffTokenHash, handoffExpiresAt, id, issuedAt)
     .run();
   return Number(result.meta.changes ?? 0) === 1;
 }

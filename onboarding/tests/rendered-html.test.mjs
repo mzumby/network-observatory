@@ -47,7 +47,7 @@ test("the customer flow starts from an agent and never asks for copy and paste",
 });
 
 test("browser routes never return the private agent connection", async () => {
-  const sources = await Promise.all([
+  const [page, connected, authorize, current, status, verify] = await Promise.all([
     read("../app/page.tsx"),
     read("../app/connected/page.tsx"),
     read("../app/api/connections/authorize/route.ts"),
@@ -55,22 +55,29 @@ test("browser routes never return the private agent connection", async () => {
     read("../app/api/connections/status/route.ts"),
     read("../app/api/connections/verify/route.ts"),
   ]);
-  const browserSurface = sources.join("\n");
+  const browserSurface = [page, connected, authorize, current, status, verify].join("\n");
 
   assert.doesNotMatch(browserSurface, /hermesCommand|mcpUrl|\/api\/mcp\/|nobs_/i);
   assert.match(browserSurface, /connectUrl/);
   assert.match(browserSurface, /SameSite=Lax|browserTokenFromRequest/);
   assert.match(browserSurface, /connectionIdFromRequest/);
   assert.match(browserSurface, /record\.id !== connectionId/);
+  assert.match(status, /getAgentConnectionStatusByBrowserIdentity/);
+  assert.doesNotMatch(status, /\bgetAgentConnectionByBrowserIdentity\b/);
+  for (const protectedRoute of [authorize, current, verify]) {
+    assert.match(protectedRoute, /\bgetAgentConnectionByBrowserIdentity\b/);
+    assert.doesNotMatch(protectedRoute, /getAgentConnectionStatusByBrowserIdentity/);
+  }
 });
 
 test("agent handoffs are server-created, browser-bound, one-time, and stored as hashes", async () => {
-  const [admin, handoff, boundedJson, identity, database, schema, migrationBase, migrationIndex, migrationCleanup, migrationRevokeState, migrationBrowserIdentity, retiredProvision, retiredInvites] = await Promise.all([
+  const [admin, handoff, boundedJson, identity, database, handoffSql, schema, migrationBase, migrationIndex, migrationCleanup, migrationRevokeState, migrationBrowserIdentity, retiredProvision, retiredInvites] = await Promise.all([
     read("../app/api/admin/agent-connections/route.ts"),
     read("../app/api/connections/handoff/route.ts"),
     read("../lib/bounded-json.mjs"),
     read("../lib/agent-connections.ts"),
     read("../lib/database.ts"),
+    read("../lib/agent-connection-sql.mjs"),
     read("../db/schema.ts"),
     read("../drizzle/0002_flimsy_wendell_vaughn.sql"),
     read("../drizzle/0003_young_wither.sql"),
@@ -129,6 +136,12 @@ test("agent handoffs are server-created, browser-bound, one-time, and stored as 
   assert.doesNotMatch(handoff, /body\?\.token|\{ token\?: string \}/);
   assert.match(handoff, /headers\.append\("set-cookie", cookie\)/);
   assert.match(handoff, /clearAgentMarkitHandoffCookie/);
+  const existingBrowserFlow = handoff.slice(
+    handoff.indexOf("const existingFlowToken"),
+    handoff.indexOf("const record = await getAgentConnectionByHandoffHash"),
+  );
+  assert.match(existingBrowserFlow, /409,\s*clearHandoff/);
+  assert.doesNotMatch(existingBrowserFlow, /clearBrowserCookie|browserCookie\(/);
   assert.match(handoff, /tabToken/);
   assert.match(handoff, /openAgentConnectionHandoff/);
   assert.match(handoff, /HttpOnly parent-domain cookie/);
@@ -149,7 +162,15 @@ test("agent handoffs are server-created, browser-bound, one-time, and stored as 
     /WHERE mcp_token_hash = \? AND installed_at IS NOT NULL/,
   );
   assert.match(database, /issueAgentConnectionHandoff/);
-  assert.match(database, /claim_expires_at <= \?/);
+  assert.match(database, /ISSUE_AGENT_CONNECTION_HANDOFF_SQL/);
+  assert.match(handoffSql, /claim_opened_at IS NOT NULL OR claim_expires_at <= \?/);
+  assert.match(handoffSql, /claim_expires_at <= \?/);
+  assert.match(handoffSql, /authorization_started_at IS NULL/);
+  assert.match(handoffSql, /browser_token_hash = NULL/);
+  assert.match(handoffSql, /browser_tab_token_hash = NULL/);
+  assert.doesNotMatch(admin, /Finish the Gmail connection already open in this browser/);
+  assert.doesNotMatch(database, /const legacy = await getMcpToken\(tokenHash\)/);
+  assert.doesNotMatch(database, /kind: "legacy"/);
   assert.match(database, /installed_at IS NOT NULL/);
   assert.match(database, /authorization_started_at = \?/);
   assert.match(database, /browser_token_hash = \? AND browser_tab_token_hash = \?/);
@@ -199,7 +220,8 @@ test("a dormant agent connection lists the same two safe tools", async () => {
   assert.match(mcp, /mcpRequestCost/);
   assert.match(mcp, /`mcp:\$\{tokenHash\}`,[\s\S]*300,[\s\S]*requestCost/);
   assert.match(mcp, /resultIfStillAuthorized/);
-  assert.match(mcp, /access\.kind !== "agent"/);
+  assert.match(mcp, /if \(!access\)/);
+  assert.doesNotMatch(mcp, /access\.kind !== "agent"/);
   assert.match(retiredPathMcp, /status:\s*410/);
   assert.doesNotMatch(retiredPathMcp, /getMcpAccess|sha256|params\.token/);
   assert.match(wrangler, /"invocation_logs": false/);

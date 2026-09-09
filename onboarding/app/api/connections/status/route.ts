@@ -6,7 +6,7 @@ import {
   safeAgentReturnUrl,
 } from "@/lib/agent-connections";
 import { sha256 } from "@/lib/crypto";
-import { getAgentConnectionByBrowserIdentity } from "@/lib/database";
+import { getAgentConnectionStatusByBrowserIdentity } from "@/lib/database";
 
 export const dynamic = "force-dynamic";
 
@@ -29,7 +29,7 @@ export async function GET(request: Request) {
   ) {
     return reply({ error: "This Gmail session has expired. Start again from your agent." }, 401);
   }
-  const record = await getAgentConnectionByBrowserIdentity(
+  const record = await getAgentConnectionStatusByBrowserIdentity(
     await sha256(browserToken),
     await sha256(browserTabToken),
   );
