@@ -28,17 +28,20 @@ screens are where you see the answers.
 
 ## Give this to your agent as one link
 
-Send your agent this URL and it can set everything up from scratch:
+Send your agent this URL and it can set up the core Observatory from scratch:
 
 ```
 https://raw.githubusercontent.com/maczumby/network-observatory/main/skills/network-observatory/SKILL.md
 ```
 
 The LinkedIn map needs nothing from anyone: your export in, your map out, all
-on your machine. The optional Gmail piece uses a metadata-only connection
-(sender, recipients, date; Google's servers refuse this connection message
-bodies). While Google verification is pending, your Gmail address needs to be
-on the operator's tester list; your agent will tell you what to do if it isn't.
+on your machine. On your own computer, you can also add Gmail metadata locally
+with `scripts/email_recency.py`.
+
+New Gmail setup for hosted agents is temporarily paused while the exact-agent
+flow is finished. The old Connect page and manual setup command are retired.
+An already-working legacy metadata connection may still be used, but it must
+not be re-created through the old flow.
 
 ## The fastest way to use it
 
@@ -74,23 +77,17 @@ hermes skills install \
   --yes
 ```
 
-The public repo does not contain baked-in authentication. That is intentional:
-every person authorizes their own Gmail account. Signing in at the Connect page
-creates a separate Composio user and a private, revocable MCP endpoint for their
-Hermes. Your Composio API key and Google client secret remain on the hosted
-service and are never given to the tester or committed to GitHub.
+The public repo does not contain baked-in authentication. New Gmail setup for
+hosted agents is temporarily unavailable, apart from the operator-controlled Day
+test harness. Do not use the retired Connect page, paste a private manual setup
+command, substitute a default Composio or Gmail connection, or follow a provider
+reconnect link.
 
-Tester onboarding is self-serve at
-[Network Observatory Connect](https://network-observatory-connect.mari-network-observatory.workers.dev):
-sign in with the Gmail you want connected. The only gate is Google's tester
-list, which the operator controls; if Google denies access, send the operator
-the exact Gmail you used and retry once you're added.
-
-Gmail is still optional. The hosted endpoint can return only sender, recipients,
-date, labels, and stable message IDs. It cannot return subjects, snippets,
-bodies, or attachments. Google may require test users to reconnect after seven
-days while the OAuth app remains in Testing. Operator setup and revocation are
-documented in `docs/COMPOSIO_ONBOARDING.md`.
+If this agent already has a working `network-observatory-gmail` connection, it
+may keep using its metadata-only tools. If it is missing or disconnected, stop
+there. Once the exact agent has a **Connections > Gmail** control in AgentMarkit,
+that control will be the setup path. Do not send someone there unless the
+control is actually present on their agent.
 
 ## Or run it yourself
 
@@ -271,11 +268,10 @@ is fully self-contained — fonts and everything else are embedded, so it makes 
 network calls at all and works with the internet off. Your data never leaves your
 machine.
 
-Optional hosted Gmail enrichment is a separate, explicit boundary. Google OAuth
-tokens stay in Composio. The Connect service stores hashed access tokens and
-pseudonymous identifiers, then passes only allowlisted message metadata to the
-user's agent. It never receives the LinkedIn export or Trellis database. See
-`docs/THREAT_MODEL.md`.
+Optional hosted Gmail enrichment is a separate, explicit boundary. When the new
+exact-agent flow is available, Google OAuth tokens stay in Composio and the
+service passes only allowlisted message metadata to that agent. It never
+receives the LinkedIn export or Trellis database. See `docs/THREAT_MODEL.md`.
 
 ## Keeping it current
 
