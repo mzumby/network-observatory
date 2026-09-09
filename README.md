@@ -28,7 +28,7 @@ screens are where you see the answers.
 
 ## Give this to your agent as one link
 
-Send your agent this URL and it can set everything up from scratch:
+Send your agent this URL and it can set up the core Observatory from scratch:
 
 ```
 https://raw.githubusercontent.com/maczumby/network-observatory/main/skills/network-observatory/SKILL.md

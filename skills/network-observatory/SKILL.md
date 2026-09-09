@@ -1,8 +1,7 @@
 ---
 name: network-observatory
+version: 1.12.4
 description: Build, update, query, and optionally enrich a private professional network from a LinkedIn export using the public Network Observatory repository. Use when a user asks Hermes or another coding agent to set up their network map, warmth table, or People workbench; remember relationships with Trellis; use an existing Network Observatory Gmail metadata connection; check email recency; ingest optional calendar or meeting events; prioritize, deprioritize, or set a follow-up date on someone; reconcile duplicate identities; or update an existing Observatory.
-metadata:
-  version: "1.12.4"
 ---
 
 # Network Observatory
