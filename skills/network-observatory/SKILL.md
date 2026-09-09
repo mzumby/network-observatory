@@ -54,10 +54,9 @@ so build them after the first enrichment pass and hand over one link, not three.
 
 ## Use optional Gmail metadata
 
-New Gmail setup for hosted agents is temporarily unavailable, apart from the
-operator-controlled Day test harness. Do not use the retired Workers Connect
-page, ask the user to paste a private manual setup command, open a default
-Composio or Gmail connection, or send a provider reconnect link.
+Do not use the retired Workers Connect page, ask the user to paste a private
+manual setup command, open a default Composio or Gmail connection, or send a
+provider reconnect link.
 
 If `network-observatory-gmail` is already configured on this agent, use those
 tools. If it is not configured, offer setup only when this exact agent has a
@@ -323,8 +322,10 @@ commands are plumbing.
   history", "who wrote last", "your map".
 - Source-state phrasing — one line, only when it changes the answer, and
   never twice in one conversation:
-  - LinkedIn only: "That's from your LinkedIn map. Email recency needs an
-    existing Gmail metadata connection; new hosted setup is temporarily paused."
+  - LinkedIn only: "That's from your LinkedIn map. Connect Gmail from this
+    agent's Connections page and I can tell you how warm these ties are."
+    Say this only when that control exists on the agent; otherwise say email
+    recency isn't available on this agent yet.
   - Gmail connected: answer with recency; when coverage is partial, say what
     the data does and doesn't reach.
   - Calendar connected: meetings just count; don't mention calendar unless
