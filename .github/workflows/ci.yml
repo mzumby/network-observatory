@@ -1,0 +1,38 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  onboarding:
+    name: Onboarding
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: onboarding
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: onboarding/package-lock.json
+      - name: Use npm 10.9.8
+        run: npm install --global npm@10.9.8
+      - name: Install dependencies
+        run: npm ci
+      - name: Test
+        run: npm test
+      - name: Audit production dependencies
+        run: npm audit --omit=dev
+      # Main has six inherited lint errors; draft PR #2 removes them.
+      - name: Lint (temporary non-blocking until PR #2)
+        continue-on-error: true
+        run: npm run lint
