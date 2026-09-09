@@ -28,7 +28,7 @@ screens are where you see the answers.
 
 ## Give this to your agent as one link
 
-Send your agent this URL and it can set everything up from scratch:
+Send your agent this URL and it can set up the core Observatory from scratch:
 
 ```
 https://raw.githubusercontent.com/maczumby/network-observatory/main/skills/network-observatory/SKILL.md
@@ -297,11 +297,10 @@ is fully self-contained — fonts and everything else are embedded, so it makes 
 network calls at all and works with the internet off. Your data never leaves your
 machine.
 
-Optional hosted Gmail enrichment is a separate, explicit boundary. Google OAuth
-tokens stay in Composio. The Connect service stores hashed access tokens and
-pseudonymous identifiers, then passes only allowlisted message metadata to the
-user's agent. It never receives the LinkedIn export or Trellis database. See
-`docs/THREAT_MODEL.md`.
+Optional hosted Gmail enrichment is a separate, explicit boundary. When the new
+exact-agent flow is available, Google OAuth tokens stay in Composio and the
+service passes only allowlisted message metadata to that agent. It never
+receives the LinkedIn export or Trellis database. See `docs/THREAT_MODEL.md`.
 
 ## Keeping it current
 

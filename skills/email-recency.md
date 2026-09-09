@@ -67,13 +67,21 @@ for making your own).
   feed `trellis capture` interactions, so radar and loops can reason over
   real email recency. Do that only when the user asks for it.
 
-## On hosted agents (Hermes): don't run this script, ingest instead
+## On hosted agents (Hermes): use an existing connection only
 
 After the agent-specific metadata tools are connected, use them instead of
 `email_recency.py`. The hosted service keeps connector credentials away from
 the agent and exposes only the two metadata tools used below.
 
-The flow on a hosted agent:
+New hosted Gmail setup is temporarily unavailable, apart from the
+operator-controlled Day test harness. If this exact agent already has a working
+`network-observatory-gmail` connection, it may keep using it. If not, stop. Do
+not use the retired Connect page, ask for a private manual setup command, open a
+default Composio or Gmail connection, or send a provider reconnect link. Do not
+re-provision a disconnected legacy connection.
+
+Future setup starts from the exact agent in AgentMarkit, then **Connections >
+Gmail**, only when that control exists. For an existing working connection:
 
 1. Call `network_observatory_sweep_email_metadata`, 25 messages at a time.
    Follow `nextPageToken` only as far as the user's question needs. Gmail's

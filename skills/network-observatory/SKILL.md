@@ -52,10 +52,12 @@ The map is one of three screens that share a design and a nav bar: the **map**
 working list). Warmth and People only say something once there's contact signal,
 so build them after the first enrichment pass and hand over one link, not three.
 
-## Connect optional Gmail metadata
+## Use optional Gmail metadata
 
-Do not ask for a Google client secret, Composio API key, token, or project
-credential. Those belong to the hosted onboarding service.
+New Gmail setup for hosted agents is temporarily unavailable, apart from the
+operator-controlled Day test harness. Do not use the retired Workers Connect
+page, ask the user to paste a private manual setup command, open a default
+Composio or Gmail connection, or send a provider reconnect link.
 
 If `network-observatory-gmail` is already configured on this agent, use those
 tools. If it is not configured, offer setup only when this exact agent has a
@@ -321,8 +323,8 @@ commands are plumbing.
   history", "who wrote last", "your map".
 - Source-state phrasing — one line, only when it changes the answer, and
   never twice in one conversation:
-  - LinkedIn only: "That's from your LinkedIn map. Connect Gmail and I can
-    tell you how warm these ties actually are."
+  - LinkedIn only: "That's from your LinkedIn map. Email recency needs an
+    existing Gmail metadata connection; new hosted setup is temporarily paused."
   - Gmail connected: answer with recency; when coverage is partial, say what
     the data does and doesn't reach.
   - Calendar connected: meetings just count; don't mention calendar unless
@@ -331,10 +333,10 @@ commands are plumbing.
     experience.
 - End a substantive answer with at most ONE offer — log a follow-up, open
   the table, or go deeper — not a menu of options.
-- When setup finishes (map built, or Gmail connected), teach by example:
-  offer exactly three starter questions — "Who have I gone cold on?",
-  "Who do I know at <a real company from their map>?", and "Remind me to
-  follow up with someone."
+- When setup finishes, teach by example. If Gmail is already connected, offer
+  "Who have I gone cold on?" Otherwise use a LinkedIn-only question. Also offer
+  "Who do I know at <a real company from their map>?" and "Remind me to follow
+  up with someone."
 
 ## Answering questions with the graph
 

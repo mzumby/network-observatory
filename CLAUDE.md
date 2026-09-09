@@ -48,8 +48,8 @@ optional and build on the earlier ones, so the map always comes first.
 user in plain language (count, span, top companies). Remind them function and
 seniority are *inferred from job titles*, not stated facts. Then teach by
 example — offer three starter questions: "Who do I know at <a real company
-from their map>?", "Who have I gone cold on?" (needs Gmail), and "Remind me
-to follow up with someone."
+from their map>?", "Who have I gone cold on?" (needs an existing Gmail
+connection), and "Remind me to follow up with someone."
 
 **Every answer about the graph follows the answer contract** in
 `skills/network-observatory/SKILL.md` ("How to talk about the graph"): one
