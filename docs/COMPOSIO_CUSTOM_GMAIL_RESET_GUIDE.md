@@ -1,5 +1,9 @@
 # Reset the custom Gmail integration in Composio
 
+> **Operator-only runbook.** Customers and agents should not follow these
+> account, credential, deployment, or migration steps. Their only setup entry
+> point is the exact agent's **Connections > Gmail** control in AgentMarkit.
+
 This guide recreates the Network Observatory Gmail integration under a new
 Composio account and a new Google Cloud project. It also explains how
 AgentMarkit gives each provisioned agent its own private connection.
