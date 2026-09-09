@@ -90,16 +90,13 @@ a per-connection, host-only flow cookie and a token kept in that browser tab
 before it starts Google approval. Separate agent setups do not overwrite each
 other.
 
-The AgentMarkit half still needs its own companion pull request. Until that is
-merged and tested, this Network Observatory pull request stays in draft and the
-flow is not live for customers. The intended Day browser test cannot run until
-that companion exists. An operator-only harness can test the Network
-Observatory half, but it cannot prove the owner and machine check.
-
-Once both halves are in place, the owner opens the agent in AgentMarkit, chooses
-**Connections > Gmail**, reviews the narrow access, and continues to Google. The
-Composio API key, Google client secret, handoff token, and agent gateway
-credential stay off the page.
+On a hosted agent, Gmail setup is available only when that exact agent has a
+**Connections > Gmail** control in AgentMarkit. When it is there, the owner uses
+that control, reviews the narrow access, and continues to Google. When it is
+absent, the agent should say setup is unavailable and wait. It must not fall
+back to a generic Connect page, an old Worker link, a manual command, or a broad
+Gmail or Composio connection. The Composio API key, Google client secret,
+handoff token, and agent gateway credential stay off the page.
 
 While the Google app is in Testing, the account being connected must be on the
 operator's tester list. If Google denies access, the owner should contact the

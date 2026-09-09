@@ -1,5 +1,9 @@
 # Gmail connections for provisioned agents
 
+> **Operator-only runbook.** Customers and agents should not follow these
+> provisioning commands. Their only setup entry point is the exact agent's
+> **Connections > Gmail** control in AgentMarkit.
+
 This runbook covers the AgentMarkit Gmail metadata connection and the controlled
 Day test. The customer flow is not live yet. Each customer will connect their
 own Google account, and each agent will get separate, revocable access.

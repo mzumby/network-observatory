@@ -56,11 +56,11 @@ check.
   the matching path could receive it. Keep all AgentMarkit subdomains trusted,
   remove abandoned DNS records, and cap the cookie lifetime at the handoff's
   remaining lifetime or five minutes, whichever is shorter.
-- An opened handoff creates a two-hour browser flow and blocks another handoff
-  for that connection during that window. If the flow is abandoned before
-  Google authorization starts, a fresh handoff is allowed after the flow
-  expires. Once Google authorization starts, recovery requires revoking the
-  connection and creating a new one.
+- An opened handoff creates a browser flow that expires after two hours. Before
+  Google authorization starts, a fresh handoff can replace an abandoned flow
+  immediately and invalidates its old browser and tab tokens. Once Google
+  authorization starts, recovery requires revoking the connection and creating
+  a new one.
 - Anyone who receives an agent's MCP bearer can use that agent's metadata
   endpoint until the grant is revoked. Treat the bearer as a password.
 - The operator's Composio project can execute allowed actions across project

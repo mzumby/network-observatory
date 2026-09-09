@@ -5,15 +5,26 @@ contact date, who wrote last, and a temperature label (active, warm, cooling,
 cold). Feed it one contact, a list, or every LinkedIn connection in your
 network database that shared an email address.
 
-This is the one piece of network-observatory that holds a credential, so the
-deal is spelled out here. Trellis and the map never touch the network; this
-script talks to Google directly, using the most limited Gmail access that
-exists (`gmail.metadata`). Under that permission Google's own servers return
-message headers only — From, To, Cc, Date — and refuse to return bodies or
-attachments no matter what the software asks for. The restriction is
-enforced by Google, not promised by this code. Your token stays in
-`data/gmail_token.json` on your machine and you can kill it any time at
-myaccount.google.com/permissions.
+## Choose the right Gmail path first
+
+- **Hosted agent (Hermes or Agent37):** do not run the local OAuth script and
+  do not ask for a client JSON, Google secret, or Composio key. Use this exact
+  agent's `network-observatory-gmail` tools when they are configured. If setup
+  is needed, use its **Connections > Gmail** control in AgentMarkit when that
+  control exists. If it is absent, say setup is unavailable for this agent.
+  Never substitute a generic Connect page, an old Worker link, a manual
+  command, or a broad Gmail or Composio connection.
+- **Agent on the user's own computer:** use the local script below. Its token
+  stays in `data/gmail_token.json` and can be revoked at
+  myaccount.google.com/permissions.
+
+For local use, this is the one piece of network-observatory that holds a
+credential, so the deal is spelled out here. Trellis and the map never touch
+the network; this script talks to Google directly, using the most limited Gmail
+access that exists (`gmail.metadata`). Under that permission Google's own
+servers return message headers only — From, To, Cc, Date — and refuse to return
+bodies or attachments no matter what the software asks for. The restriction is
+enforced by Google, not promised by this code.
 
 ## What you can do
 
@@ -58,25 +69,9 @@ for making your own).
 
 ## On hosted agents (Hermes): don't run this script, ingest instead
 
-`email_recency.py` is for agents on the user's own computer. If you are a
-hosted agent (Hermes, Agent37), do not set up OAuth here and do not ask the
-user for a client JSON, Google secret, or Composio key. Use the private Network
-Observatory connection provisioned for this specific agent. It keeps connector
-credentials on the hosted service and exposes only two metadata tools.
-
-The managed customer flow is not live yet. Only an operator-controlled Day
-harness may exercise the Network Observatory half. Otherwise, tell the user
-Gmail connection is not available yet. Do not share a setup link, gateway
-credential, or manual command.
-
-The finished flow starts from the exact agent's **Connections > Gmail** page.
-AgentMarkit checks the signed-in owner and machine, then requests a one-use
-handoff with the verified owner and installation references. Network Observatory
-checks both again. AgentMarkit puts the token in a per-connection HttpOnly
-cookie for at most five minutes. The browser gets only a non-secret Connect
-address. The Network Observatory half is implemented, but the AgentMarkit
-companion has not been merged or tested yet. An operator-only harness does not
-test the intended owner-bound browser flow.
+After the agent-specific metadata tools are connected, use them instead of
+`email_recency.py`. The hosted service keeps connector credentials away from
+the agent and exposes only the two metadata tools used below.
 
 The flow on a hosted agent:
 

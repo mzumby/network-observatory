@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""List or revoke Network Observatory onboarding access."""
+"""List legacy and agent-bound access, or revoke legacy onboarding access."""
 
 import argparse
 import json
@@ -29,11 +29,17 @@ def request(url, token, method="GET", payload=None):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="List or revoke tester access.")
+    parser = argparse.ArgumentParser(
+        description="List legacy and agent-bound access, or revoke legacy access."
+    )
     parser.add_argument("--url", required=True, help="deployed onboarding base URL")
     subparsers = parser.add_subparsers(dest="command", required=True)
-    subparsers.add_parser("list", help="list invitations and access state")
-    revoke = subparsers.add_parser("revoke", help="revoke one Composio session")
+    subparsers.add_parser(
+        "list", help="list legacy invitations and agent-bound connection state"
+    )
+    revoke = subparsers.add_parser(
+        "revoke", help="revoke one legacy Composio session (not an agent connection)"
+    )
     revoke.add_argument("session_id")
     args = parser.parse_args()
 

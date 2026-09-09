@@ -1,7 +1,8 @@
 ---
 name: network-observatory
-version: 1.12.3
 description: Build, update, query, and optionally enrich a private professional network from a LinkedIn export using the public Network Observatory repository. Use when a user asks Hermes or another coding agent to set up their network map, warmth table, or People workbench; remember relationships with Trellis; connect the Network Observatory Gmail metadata endpoint; check email recency; ingest optional calendar or meeting events; prioritize, deprioritize, or set a follow-up date on someone; reconcile duplicate identities; or update an existing Observatory.
+metadata:
+  version: "1.13.0"
 ---
 
 # Network Observatory
@@ -57,17 +58,13 @@ so build them after the first enrichment pass and hand over one link, not three.
 Do not ask for a Google client secret, Composio API key, token, or project
 credential. Those belong to the hosted onboarding service.
 
-If `network-observatory-gmail` is not configured on this agent, never work
-around it by connecting Gmail through your own Composio toolkit or any other
-default Gmail tool. Those request broad mailbox scopes, which is exactly what
-this design avoids. Tell the user: "Open this agent in AgentMarkit, choose
-Connections, then Gmail." AgentMarkit must prepare the connection for the
-specific agent. Do not send the user to a generic Connect page.
-
-The managed customer flow is not live yet. Only an operator-controlled Day
-harness may exercise the Network Observatory half. If the operator has not
-explicitly put this agent in that test, say the Gmail connection is not
-available yet. Do not offer a setup link or improvise a manual setup.
+If `network-observatory-gmail` is already configured on this agent, use those
+tools. If it is not configured, offer setup only when this exact agent has a
+**Connections > Gmail** control in AgentMarkit. When the control exists, tell
+the user to open it. When it is absent, say Gmail setup is unavailable for this
+agent. Never work around that by using a generic Connect page, an old Worker
+link, a manual command, your own Composio toolkit, or another default Gmail
+tool. Those routes can expose credentials or request broader mailbox access.
 
 Setup must begin on this exact agent's **Connections > Gmail** page.
 AgentMarkit checks the signed-in owner and machine, then asks Network Observatory
@@ -77,11 +74,6 @@ per-connection HttpOnly cookie for at most five minutes. The browser sees only a
 non-secret Connect address. Network Observatory requires both that handoff and
 the saved connection ID before it opens the Google flow. Never ask the user to
 copy a token or address between services.
-
-The Network Observatory half is implemented. The AgentMarkit companion still
-needs to be merged and tested, so do not describe this as a live customer
-feature yet. An operator-only harness may test the Network Observatory half,
-but the intended Day browser flow cannot run until the companion exists.
 
 After the map is built, offer this once: "Want to add Gmail metadata search?
 It can only see who you exchanged email with and when, never the messages
@@ -412,5 +404,5 @@ of their network:
 - Explain why a person appears in radar.
 - Draft only from stored facts.
 - Never send a message.
-- Never expose the private MCP URL in a public channel.
+- Never expose the agent gateway credential in a public channel.
 - Keep the Observatory useful with LinkedIn alone.

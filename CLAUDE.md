@@ -268,11 +268,10 @@ a per-connection HttpOnly cookie for at most five minutes. The browser receives
 only a non-secret Connect address. Never send a setup token or manual Connect
 link in chat.
 
-The Network Observatory half is implemented, but the AgentMarkit companion has
-not been merged or tested end to end. The managed customer flow is not live.
-Unless the operator confirms that this is the controlled Day harness, say Gmail
-connection is not available rather than improvising a setup. The harness tests
-only the Network Observatory half.
+Use this route only when that exact agent has a **Connections > Gmail** control
+in AgentMarkit. If the control is absent, say Gmail setup is unavailable for
+this agent. Do not improvise with a generic Connect page, an old Worker link, a
+manual command, or a broad Gmail or Composio connection.
 
 ## Updating the tool
 
