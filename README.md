@@ -79,15 +79,27 @@ The AgentMarkit flow is designed to prepare a private, revocable connection for
 one named agent, then let its owner approve Google. The customer never handles a
 gateway credential, terminal command, or copy and paste step.
 
-This flow is not live for customers yet. The current one-time setup link can be
-forwarded to someone else before it is opened. That is acceptable only for the
-controlled Day test. Production is blocked until AgentMarkit authenticates the
-signed-in owner and binds that owner and agent to the Google callback.
+Network Observatory now has the secure half of the AgentMarkit handoff.
+AgentMarkit will check the signed-in owner and exact machine, request a one-use
+handoff token with the verified owner and installation references, and receive
+it over its server connection. Network Observatory derives the stored owner
+identity again and checks the exact installation. AgentMarkit puts the token in
+a per-connection HttpOnly cookie for at most five minutes. The browser receives
+only a non-secret Connect address. Network Observatory consumes the handoff into
+a per-connection, host-only flow cookie and a token kept in that browser tab
+before it starts Google approval. Separate agent setups do not overwrite each
+other.
 
-Once that binding exists, the owner will open the agent in AgentMarkit, choose
-**Connections > Gmail**, review the narrow access, and continue to Google. The
-Composio API key, Google client secret, and agent gateway credential stay on the
-hosted services.
+The AgentMarkit half still needs its own companion pull request. Until that is
+merged and tested, this Network Observatory pull request stays in draft and the
+flow is not live for customers. The intended Day browser test cannot run until
+that companion exists. An operator-only harness can test the Network
+Observatory half, but it cannot prove the owner and machine check.
+
+Once both halves are in place, the owner opens the agent in AgentMarkit, chooses
+**Connections > Gmail**, reviews the narrow access, and continues to Google. The
+Composio API key, Google client secret, handoff token, and agent gateway
+credential stay off the page.
 
 While the Google app is in Testing, the account being connected must be on the
 operator's tester list. If Google denies access, the owner should contact the

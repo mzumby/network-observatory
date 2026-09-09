@@ -258,9 +258,21 @@ It creates one private, revocable connection per agent through the operator's
 custom Composio Gmail auth config. The project credential stays on the server,
 and the connection returns only allowlisted sender, recipient, date, label, and
 ID metadata. Feed those events to `trellis.py ingest` as described in
-`skills/email-recency.md`. The managed customer flow is not live yet. Unless
-the agent is part of the controlled Day test, say Gmail connection is not
-available rather than improvising a setup.
+`skills/email-recency.md`.
+
+Gmail setup starts from the exact agent's **Connections > Gmail** page in
+AgentMarkit. After checking the signed-in owner and machine, AgentMarkit asks
+Network Observatory for a one-use handoff with those same owner and installation
+references. Network Observatory checks both again. AgentMarkit puts the token in
+a per-connection HttpOnly cookie for at most five minutes. The browser receives
+only a non-secret Connect address. Never send a setup token or manual Connect
+link in chat.
+
+The Network Observatory half is implemented, but the AgentMarkit companion has
+not been merged or tested end to end. The managed customer flow is not live.
+Unless the operator confirms that this is the controlled Day harness, say Gmail
+connection is not available rather than improvising a setup. The harness tests
+only the Network Observatory half.
 
 ## Updating the tool
 

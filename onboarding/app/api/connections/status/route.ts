@@ -1,6 +1,7 @@
 import {
   browserTokenFromRequest,
   browserTabTokenFromRequest,
+  connectionIdFromRequest,
   connectionState,
   safeAgentReturnUrl,
 } from "@/lib/agent-connections";
@@ -17,7 +18,8 @@ function reply(body: unknown, status = 200) {
 }
 
 export async function GET(request: Request) {
-  const browserToken = browserTokenFromRequest(request);
+  const connectionId = connectionIdFromRequest(request);
+  const browserToken = browserTokenFromRequest(request, connectionId);
   const browserTabToken = browserTabTokenFromRequest(request);
   if (
     !browserToken.startsWith("flow_") ||
@@ -25,14 +27,14 @@ export async function GET(request: Request) {
     !browserTabToken.startsWith("tab_") ||
     browserTabToken.length > 128
   ) {
-    return reply({ error: "This setup session has expired. Start again from your agent." }, 401);
+    return reply({ error: "This Gmail session has expired. Start again from your agent." }, 401);
   }
   const record = await getAgentConnectionByBrowserIdentity(
     await sha256(browserToken),
     await sha256(browserTabToken),
   );
-  if (!record) {
-    return reply({ error: "This setup session has expired. Start again from your agent." }, 401);
+  if (!record || record.id !== connectionId) {
+    return reply({ error: "This Gmail session has expired. Start again from your agent." }, 401);
   }
 
   const state = connectionState(record);

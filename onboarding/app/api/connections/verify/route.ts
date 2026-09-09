@@ -1,6 +1,7 @@
 import {
   browserTabTokenFromRequest,
   browserTokenFromRequest,
+  connectionIdFromRequest,
 } from "@/lib/agent-connections";
 import {
   completeGmailAuth,
@@ -49,12 +50,14 @@ export async function GET() {
       const fail = () => location.replace('/?problem=identity-check');
       const sessionUri = new URLSearchParams(location.search).get('session_uri');
       const tabToken = sessionStorage.getItem('agentmarkit_gmail_flow');
-      if (!sessionUri || !tabToken) return fail();
+      const connectionId = sessionStorage.getItem('agentmarkit_gmail_connection_id');
+      if (!sessionUri || !tabToken || !connectionId) return fail();
       fetch('/api/connections/verify', {
         method: 'POST',
         headers: {
           'content-type': 'application/json',
           'x-agentmarkit-flow': tabToken,
+          'x-agentmarkit-connection': connectionId,
         },
         body: JSON.stringify({ sessionUri }),
       })
@@ -89,7 +92,8 @@ export async function POST(request: Request) {
     | null;
   const sessionUri =
     typeof body?.sessionUri === "string" ? body.sessionUri.trim() : "";
-  const browserToken = browserTokenFromRequest(request);
+  const connectionId = connectionIdFromRequest(request);
+  const browserToken = browserTokenFromRequest(request, connectionId);
   const browserTabToken = browserTabTokenFromRequest(request);
   if (
     !sessionUri ||
@@ -106,7 +110,7 @@ export async function POST(request: Request) {
     await sha256(browserToken),
     await sha256(browserTabToken),
   );
-  if (!record || record.revoked_at || !record.session_id) {
+  if (!record || record.id !== connectionId || record.revoked_at || !record.session_id) {
     return reply(request, "identity-check");
   }
 

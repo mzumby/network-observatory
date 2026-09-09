@@ -1,35 +1,63 @@
 import { hmacSha256, sha256 } from "./crypto";
 import type { AgentConnectionRecord } from "./database";
+import {
+  agentMarkitFlowCookie,
+  agentMarkitFlowTokenFromCookie,
+} from "./browser-flow-cookie.mjs";
+import { agentMarkitHandoffTokenFromCookie } from "./handoff-cookie.mjs";
 
-export const CONNECTION_COOKIE = "agentmarkit_gmail_connection";
+export {
+  AGENTMARKIT_FLOW_COOKIE_PATH,
+  AGENTMARKIT_FLOW_COOKIE_PREFIX,
+  agentMarkitFlowCookieName,
+  clearAgentMarkitFlowCookie,
+} from "./browser-flow-cookie.mjs";
+export {
+  AGENTMARKIT_HANDOFF_COOKIE_PREFIX,
+  AGENTMARKIT_HANDOFF_PATH,
+  agentMarkitHandoffCookieName,
+  clearAgentMarkitHandoffCookie,
+  trustedHandoffRequest,
+} from "./handoff-cookie.mjs";
+
 export const CONNECTION_TAB_HEADER = "x-agentmarkit-flow";
+export const CONNECTION_ID_HEADER = "x-agentmarkit-connection";
 export const DISCLOSURE_VERSION = "gmail-metadata-v1";
 export const BROWSER_SESSION_MS = 2 * 60 * 60_000;
+export const HANDOFF_SESSION_MS = 5 * 60_000;
 
 export function connectionState(record: AgentConnectionRecord) {
   if (record.revoked_at) return "revoked" as const;
   if (record.needs_reconnect_at) return "needs_reconnect" as const;
   if (record.authorized_at) return "connected" as const;
-  if (record.session_id || record.authorization_started_at) return "authorizing" as const;
+  if (
+    record.session_id ||
+    record.authorization_started_at ||
+    (record.claim_opened_at &&
+      record.browser_token_expires_at &&
+      record.browser_token_expires_at > new Date().toISOString())
+  ) {
+    return "authorizing" as const;
+  }
   return "waiting" as const;
 }
 
 export async function agentConnectionTokens(
   identityPepper: string,
   connectionId: string,
-  claimExpiresAt: string,
+  handoffExpiresAt: string,
 ) {
-  const [mcpSignature, claimSignature] = await Promise.all([
+  const [mcpSignature, handoffSignature] = await Promise.all([
     hmacSha256(identityPepper, `agent-mcp:${connectionId}`),
-    hmacSha256(identityPepper, `agent-claim:${connectionId}:${claimExpiresAt}`),
+    hmacSha256(identityPepper, `agent-handoff:${connectionId}:${handoffExpiresAt}`),
   ]);
   const mcpToken = `nobs_${connectionId}_${mcpSignature.slice(0, 32)}`;
-  const claimToken = `claim_${connectionId}_${claimSignature.slice(0, 32)}`;
+  const handoffToken = `handoff_${connectionId}_${handoffSignature.slice(0, 32)}`;
   return {
     mcpToken,
-    claimToken,
+    handoffToken,
     mcpTokenHash: await sha256(mcpToken),
-    claimTokenHash: await sha256(claimToken),
+    handoffTokenHash: await sha256(handoffToken),
   };
 }
 
@@ -50,35 +78,50 @@ export async function userIdForGrant(
   return `netobs_${digest.slice(0, 32)}`;
 }
 
-export function browserTokenFromRequest(request: Request) {
-  const cookie = request.headers.get("cookie") || "";
-  for (const part of cookie.split(";")) {
-    const [name, ...value] = part.trim().split("=");
-    if (name === CONNECTION_COOKIE) {
-      try {
-        return decodeURIComponent(value.join("="));
-      } catch {
-        return "";
-      }
-    }
-  }
-  return "";
+export function connectionIdFromRequest(request: Request) {
+  const connectionId = request.headers.get(CONNECTION_ID_HEADER)?.trim() || "";
+  return /^acn_[a-f0-9]{24}$/.test(connectionId) ? connectionId : "";
+}
+
+export function browserTokenFromRequest(
+  request: Request,
+  connectionId = connectionIdFromRequest(request),
+) {
+  return agentMarkitFlowTokenFromCookie(
+    request.headers.get("cookie") || "",
+    connectionId,
+  );
+}
+
+export function agentMarkitHandoffTokenFromRequest(
+  request: Request,
+  connectionId: string,
+) {
+  return agentMarkitHandoffTokenFromCookie(
+    request.headers.get("cookie") || "",
+    connectionId,
+  );
 }
 
 export function browserTabTokenFromRequest(request: Request) {
   return request.headers.get(CONNECTION_TAB_HEADER)?.trim() || "";
 }
 
-export function browserCookie(token: string, requestUrl: string) {
-  const secure = new URL(requestUrl).protocol === "https:" ? "; Secure" : "";
-  return `${CONNECTION_COOKIE}=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${
-    BROWSER_SESSION_MS / 1000
-  }${secure}`;
+export function browserCookie(
+  token: string,
+  requestUrl: string,
+  connectionId: string,
+) {
+  return agentMarkitFlowCookie(
+    token,
+    requestUrl,
+    connectionId,
+    BROWSER_SESSION_MS / 1000,
+  );
 }
 
-export function clearBrowserCookie(requestUrl: string) {
-  const secure = new URL(requestUrl).protocol === "https:" ? "; Secure" : "";
-  return `${CONNECTION_COOKIE}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0${secure}`;
+export function clearBrowserCookie(requestUrl: string, connectionId: string) {
+  return agentMarkitFlowCookie("", requestUrl, connectionId, 0);
 }
 
 export function safeAgentReturnUrl(value: unknown) {

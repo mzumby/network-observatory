@@ -24,7 +24,7 @@ export async function GET() {
         path: "/api/connections/verify",
         check: "Confirm it is enabled in the Composio project before rollout.",
       },
-      mode: "agent-claim",
+      mode: "agentmarkit-browser-handoff",
     },
     {
       headers: {

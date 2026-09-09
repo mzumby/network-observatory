@@ -107,7 +107,7 @@ test("one installation cannot have two active grants", async () => {
   );
 });
 
-test("a claim is consumed once, when authorization starts", async () => {
+test("a browser handoff is consumed once when its flow opens", async () => {
   const db = await database();
   insertConnection(db, { installedAt: "2026-09-08T12:01:00.000Z" });
   const consume = db.prepare(
@@ -219,27 +219,134 @@ test("authorization requires the same unexpired browser and tab pair", async () 
   );
 });
 
-test("a started connection cannot rotate its claim", async () => {
+test("an active or started connection cannot replace its browser handoff", async () => {
   const db = await database();
   insertConnection(db, {
     installedAt: "2026-09-08T12:01:00.000Z",
     authorizationStartedAt: "2026-09-08T12:02:00.000Z",
   });
-  const rotate = db.prepare(
+  const issue = db.prepare(
     `UPDATE agent_connections
      SET claim_token_hash = ?, claim_expires_at = ?, claim_opened_at = NULL
-     WHERE id = ? AND session_id IS NULL
+     WHERE id = ? AND (
+         (claim_opened_at IS NULL AND claim_expires_at <= ?)
+         OR (claim_opened_at IS NOT NULL AND browser_token_expires_at IS NOT NULL
+           AND browser_token_expires_at <= ?)
+       )
+       AND installed_at IS NOT NULL AND session_id IS NULL
        AND authorization_started_at IS NULL AND authorized_at IS NULL
        AND revoked_at IS NULL`,
   );
 
   assert.equal(
-    rotate.run(
+    issue.run(
       "claim-second",
-      "2026-09-16T12:00:00.000Z",
+      "2026-09-08T12:07:00.000Z",
       "acn_first",
+      "2026-09-08T12:02:00.000Z",
+      "2026-09-08T12:02:00.000Z",
     ).changes,
     0,
+  );
+
+  db.prepare(
+    "UPDATE agent_connections SET authorization_started_at = NULL WHERE id = ?",
+  ).run("acn_first");
+  assert.equal(
+    issue.run(
+      "claim-second",
+      "2026-09-08T12:07:00.000Z",
+      "acn_first",
+      "2026-09-08T12:02:00.000Z",
+      "2026-09-08T12:02:00.000Z",
+    ).changes,
+    0,
+  );
+});
+
+test("an expired dormant handoff is issued once across retries", async () => {
+  const db = await database();
+  insertConnection(db, {
+    installedAt: "2026-09-08T12:01:00.000Z",
+    claimExpiresAt: "1970-01-01T00:00:00.000Z",
+  });
+  const issue = db.prepare(
+    `UPDATE agent_connections
+     SET claim_token_hash = ?, claim_expires_at = ?, claim_opened_at = NULL
+     WHERE id = ? AND (
+         (claim_opened_at IS NULL AND claim_expires_at <= ?)
+         OR (claim_opened_at IS NOT NULL AND browser_token_expires_at IS NOT NULL
+           AND browser_token_expires_at <= ?)
+       )
+       AND installed_at IS NOT NULL AND session_id IS NULL
+       AND authorization_started_at IS NULL AND authorized_at IS NULL
+       AND revoked_at IS NULL`,
+  );
+  const args = [
+    "claim-issued",
+    "2026-09-08T12:07:00.000Z",
+    "acn_first",
+    "2026-09-08T12:02:00.000Z",
+    "2026-09-08T12:02:00.000Z",
+  ];
+
+  assert.equal(issue.run(...args).changes, 1);
+  assert.equal(issue.run(...args).changes, 0);
+  const issued = db.prepare(
+    "SELECT claim_token_hash, claim_expires_at FROM agent_connections WHERE id = ?",
+  ).get("acn_first");
+  assert.equal(issued.claim_token_hash, "claim-issued");
+  assert.equal(issued.claim_expires_at, "2026-09-08T12:07:00.000Z");
+});
+
+test("an abandoned browser handoff can restart only after its flow expires", async () => {
+  const db = await database();
+  insertConnection(db, { installedAt: "2026-09-08T12:01:00.000Z" });
+  db.prepare(
+    `UPDATE agent_connections
+     SET claim_opened_at = ?, browser_token_hash = ?, browser_tab_token_hash = ?,
+       browser_token_expires_at = ? WHERE id = ?`,
+  ).run(
+    "2026-09-08T12:02:00.000Z",
+    "browser-first",
+    "tab-first",
+    "2026-09-08T12:05:00.000Z",
+    "acn_first",
+  );
+  const issue = db.prepare(
+    `UPDATE agent_connections
+     SET claim_token_hash = ?, claim_expires_at = ?, claim_opened_at = NULL,
+       browser_token_hash = NULL, browser_tab_token_hash = NULL,
+       browser_token_expires_at = NULL
+     WHERE id = ? AND (
+         (claim_opened_at IS NULL AND claim_expires_at <= ?)
+         OR (claim_opened_at IS NOT NULL AND browser_token_expires_at IS NOT NULL
+           AND browser_token_expires_at <= ?)
+       )
+       AND installed_at IS NOT NULL AND session_id IS NULL
+       AND authorization_started_at IS NULL AND authorized_at IS NULL
+       AND revoked_at IS NULL`,
+  );
+
+  assert.equal(
+    issue.run(
+      "handoff-too-early",
+      "2026-09-08T12:09:00.000Z",
+      "acn_first",
+      "2026-09-08T12:04:00.000Z",
+      "2026-09-08T12:04:00.000Z",
+    ).changes,
+    0,
+  );
+  assert.equal(
+    issue.run(
+      "handoff-restarted",
+      "2026-09-08T12:11:00.000Z",
+      "acn_first",
+      "2026-09-08T12:06:00.000Z",
+      "2026-09-08T12:06:00.000Z",
+    ).changes,
+    1,
   );
 });
 

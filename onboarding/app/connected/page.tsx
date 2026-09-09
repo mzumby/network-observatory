@@ -25,9 +25,14 @@ export default function Connected() {
     async function check() {
       try {
         const tabToken = window.sessionStorage.getItem("agentmarkit_gmail_flow") || "";
+        const connectionId =
+          window.sessionStorage.getItem("agentmarkit_gmail_connection_id") || "";
         const response = await fetch("/api/connections/status", {
           cache: "no-store",
-          headers: { "x-agentmarkit-flow": tabToken },
+          headers: {
+            "x-agentmarkit-flow": tabToken,
+            "x-agentmarkit-connection": connectionId,
+          },
         });
         const data = (await response.json().catch(() => null)) as Status | null;
         if (!response.ok || !data) {
@@ -39,6 +44,7 @@ export default function Connected() {
         setStatus(data);
         if (data.state === "connected") {
           window.sessionStorage.removeItem("agentmarkit_gmail_flow");
+          window.sessionStorage.removeItem("agentmarkit_gmail_connection_id");
           return;
         }
         if (data.state === "needs_reconnect") return;

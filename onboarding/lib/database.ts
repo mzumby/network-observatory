@@ -224,12 +224,12 @@ export async function getActiveAgentConnectionByInstallationRef(
     .first<AgentConnectionRecord>();
 }
 
-export async function getAgentConnectionByClaimHash(claimTokenHash: string) {
+export async function getAgentConnectionByHandoffHash(handoffTokenHash: string) {
   return runtimeEnv().DB.prepare(
     `SELECT ${AGENT_CONNECTION_COLUMNS}
      FROM agent_connections WHERE claim_token_hash = ?`,
   )
-    .bind(claimTokenHash)
+    .bind(handoffTokenHash)
     .first<AgentConnectionRecord>();
 }
 
@@ -266,8 +266,8 @@ export async function createAgentConnection(record: {
   agentName: string;
   returnUrl: string | null;
   mcpTokenHash: string;
-  claimTokenHash: string;
-  claimExpiresAt: string;
+  handoffTokenHash: string;
+  handoffExpiresAt: string;
 }) {
   const createdAt = new Date().toISOString();
   await runtimeEnv().DB.prepare(
@@ -284,9 +284,9 @@ export async function createAgentConnection(record: {
       record.agentName,
       record.returnUrl,
       record.mcpTokenHash,
-      record.claimTokenHash,
+      record.handoffTokenHash,
       createdAt,
-      record.claimExpiresAt,
+      record.handoffExpiresAt,
     )
     .run();
 }
@@ -302,10 +302,11 @@ export async function markAgentConnectionInstalled(id: string) {
   return Number(result.meta.changes ?? 0) === 1;
 }
 
-export async function rotateAgentConnectionClaim(
+export async function issueAgentConnectionHandoff(
   id: string,
-  claimTokenHash: string,
-  claimExpiresAt: string,
+  handoffTokenHash: string,
+  handoffExpiresAt: string,
+  issuedAt: string,
 ) {
   const result = await runtimeEnv().DB.prepare(
     `UPDATE agent_connections
@@ -313,17 +314,22 @@ export async function rotateAgentConnectionClaim(
        browser_token_hash = NULL, browser_tab_token_hash = NULL,
        browser_token_expires_at = NULL,
        error_code = NULL
-     WHERE id = ? AND session_id IS NULL
+     WHERE id = ? AND (
+         (claim_opened_at IS NULL AND claim_expires_at <= ?)
+         OR (claim_opened_at IS NOT NULL AND browser_token_expires_at IS NOT NULL
+           AND browser_token_expires_at <= ?)
+       )
+       AND installed_at IS NOT NULL AND session_id IS NULL
        AND authorization_started_at IS NULL AND authorized_at IS NULL
        AND revoked_at IS NULL`,
   )
-    .bind(claimTokenHash, claimExpiresAt, id)
+    .bind(handoffTokenHash, handoffExpiresAt, id, issuedAt, issuedAt)
     .run();
   return Number(result.meta.changes ?? 0) === 1;
 }
 
-export async function openAgentConnectionClaim(
-  claimTokenHash: string,
+export async function openAgentConnectionHandoff(
+  handoffTokenHash: string,
   browserTokenHash: string,
   browserTabTokenHash: string,
   browserTokenExpiresAt: string,
@@ -343,7 +349,7 @@ export async function openAgentConnectionClaim(
       browserTokenHash,
       browserTabTokenHash,
       browserTokenExpiresAt,
-      claimTokenHash,
+      handoffTokenHash,
       now,
     )
     .run();

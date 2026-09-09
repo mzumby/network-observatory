@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Create, confirm, refresh, or revoke an agent-bound Gmail connection."""
+"""Create, confirm, hand off, or revoke an agent-bound Gmail connection."""
 
 import argparse
 import json
@@ -71,7 +71,7 @@ def write_secret_file(target, descriptor, payload):
 
 def print_redacted(payload, secret_file=None):
     clean = dict(payload)
-    for key in ("mcpBearerToken", "claimUrl"):
+    for key in ("mcpBearerToken", "handoffToken"):
         if clean.get(key):
             clean[key] = f"[saved in {secret_file}]"
     print(json.dumps(clean, indent=2))
@@ -90,17 +90,18 @@ def main():
     create.add_argument("--installation-ref", required=True, help="stable agent installation ID")
     create.add_argument("--agent-name", required=True)
     create.add_argument("--return-url")
-    create.add_argument("--hours", type=int, default=168, help="claim-link lifetime")
-    create.add_argument("--secret-file", required=True, help="new 0600 JSON handoff file")
+    create.add_argument("--secret-file", required=True, help="new 0600 JSON credential file")
 
     installed = commands.add_parser("installed", help="confirm the endpoint passed its agent-side check")
     installed.add_argument("connection_id")
-    installed.add_argument("--secret-file", required=True, help="new 0600 JSON handoff file")
 
-    rotate = commands.add_parser("rotate", help="replace an unopened or expired claim link")
-    rotate.add_argument("connection_id")
-    rotate.add_argument("--hours", type=int, default=168, help="new claim-link lifetime")
-    rotate.add_argument("--secret-file", required=True, help="new 0600 JSON handoff file")
+    handoff = commands.add_parser("handoff", help="issue a five-minute browser handoff")
+    handoff.add_argument("connection_id")
+    handoff.add_argument("--owner-ref", required=True, help="owner verified by AgentMarkit")
+    handoff.add_argument(
+        "--installation-ref", required=True, help="installation verified by AgentMarkit"
+    )
+    handoff.add_argument("--secret-file", required=True, help="new 0600 JSON handoff file")
 
     revoke = commands.add_parser("revoke", help="revoke one agent connection")
     revoke.add_argument("connection_id")
@@ -121,6 +122,16 @@ def main():
         print(json.dumps(result, indent=2))
         return
 
+    if args.command == "installed":
+        result = call(
+            args.url,
+            token,
+            "PATCH",
+            {"connectionId": args.connection_id, "installed": True},
+        )
+        print(json.dumps(result, indent=2))
+        return
+
     secret_file, descriptor = reserve_secret_file(args.secret_file)
     try:
         if args.command == "create":
@@ -130,16 +141,8 @@ def main():
                 "installationRef": args.installation_ref,
                 "agentName": args.agent_name,
                 "returnUrl": args.return_url,
-                "expiresInHours": args.hours,
             }
             result = call(args.url, token, "POST", payload)
-        elif args.command == "installed":
-            result = call(
-                args.url,
-                token,
-                "PATCH",
-                {"connectionId": args.connection_id, "installed": True},
-            )
         else:
             result = call(
                 args.url,
@@ -147,8 +150,9 @@ def main():
                 "PATCH",
                 {
                     "connectionId": args.connection_id,
-                    "rotateClaim": True,
-                    "expiresInHours": args.hours,
+                    "issueHandoff": True,
+                    "ownerRef": args.owner_ref,
+                    "installationRef": args.installation_ref,
                 },
             )
         write_secret_file(secret_file, descriptor, result)

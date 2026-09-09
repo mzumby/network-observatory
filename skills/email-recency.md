@@ -64,10 +64,19 @@ user for a client JSON, Google secret, or Composio key. Use the private Network
 Observatory connection provisioned for this specific agent. It keeps connector
 credentials on the hosted service and exposes only two metadata tools.
 
-The managed customer flow is not live yet. Use it only on an agent that
-AgentMarkit has explicitly provisioned for the controlled Day test. Otherwise,
-tell the user Gmail connection is not available yet. Do not share a setup link,
-gateway credential, or manual command.
+The managed customer flow is not live yet. Only an operator-controlled Day
+harness may exercise the Network Observatory half. Otherwise, tell the user
+Gmail connection is not available yet. Do not share a setup link, gateway
+credential, or manual command.
+
+The finished flow starts from the exact agent's **Connections > Gmail** page.
+AgentMarkit checks the signed-in owner and machine, then requests a one-use
+handoff with the verified owner and installation references. Network Observatory
+checks both again. AgentMarkit puts the token in a per-connection HttpOnly
+cookie for at most five minutes. The browser gets only a non-secret Connect
+address. The Network Observatory half is implemented, but the AgentMarkit
+companion has not been merged or tested yet. An operator-only harness does not
+test the intended owner-bound browser flow.
 
 The flow on a hosted agent:
 

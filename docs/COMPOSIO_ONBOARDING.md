@@ -6,24 +6,72 @@ own Google account, and each agent will get separate, revocable access.
 
 Day is the first test case. Nothing in the connection code is specific to Day.
 
-## Production blocker: bind the signed-in owner to the agent
+## How AgentMarkit binds the right owner to the right agent
 
-The current claim URL is one-time and short-lived, but it can still be
-forwarded before anyone opens it. The first person who opens it can connect a
-Google account to the named agent. The browser and callback checks protect the
-rest of that attempt, but they do not prove that the person owns the agent.
+AgentMarkit is the source of truth for who owns an agent and which machine runs
+it. Its **Connect Gmail** action must run behind AgentMarkit login and check all
+three of these before it starts the browser handoff:
 
-Use the current flow only for the controlled Day test. Do not expose it as a
-customer feature or describe it as live.
+1. The signed-in owner.
+2. The exact agent and machine selected on the page.
+3. The Network Observatory `connectionId` saved for that machine.
 
-Before production, AgentMarkit must authenticate the person on its own site and
-bind the signed-in owner, the selected agent, and the connection claim. The
-Connect callback must verify that binding before it accepts the Google account.
-A signed, short-lived, one-use assertion from AgentMarkit's server is one way to
-do this. It must be delivered server-to-server or tied to the signed-in
-AgentMarkit session, not added to a bearer link that can be forwarded. The
-assertion must name an opaque owner reference, the installation reference, and
-the connection ID. A claim URL by itself is not proof of ownership.
+After those checks, AgentMarkit's server asks Network Observatory to issue the
+handoff:
+
+```json
+{
+  "connectionId": "acn_example",
+  "issueHandoff": true,
+  "ownerRef": "stable-opaque-customer-id",
+  "installationRef": "stable-agent-installation-id"
+}
+```
+
+Network Observatory derives the private owner identity again and compares both
+it and `installationRef` with the stored connection. A mismatch returns a
+generic not-found response. If the connection already has an active, unopened
+handoff, the API returns that same handoff instead of creating another one.
+Otherwise it creates one that expires in five minutes. The authenticated server
+response contains `handoffToken`, `connectUrl`, and `handoffExpiresAt`.
+
+AgentMarkit puts the token in this per-connection cookie:
+
+```text
+agentmarkit_gmail_handoff_<connectionId>=<handoffToken>;
+Max-Age=<smaller of 300 or seconds remaining until handoffExpiresAt>;
+Path=/api/connections/handoff; Domain=agentmarkit.com;
+HttpOnly; Secure; SameSite=Strict
+```
+
+The response to the browser contains only `connectUrl`. The token is not put in
+the URL, page HTML, browser JavaScript, logs, or analytics. The cookie lasts five
+minutes at most. Its domain allows `connect.agentmarkit.com` to receive it, and
+its path limits browser requests carrying it to `/api/connections/handoff`.
+
+The Connect page posts the non-secret connection ID to
+`/api/connections/handoff`. Network Observatory checks the one-use handoff token,
+checks that it belongs to that connection, consumes it, and clears the parent-
+domain cookie. It then creates this host-only browser-flow cookie on
+`connect.agentmarkit.com`:
+
+```text
+agentmarkit_gmail_connection_<connectionId>=<flowToken>;
+Path=/api/connections; Max-Age=7200;
+HttpOnly; Secure; SameSite=Lax
+```
+
+Network Observatory also returns a separate tab token. The page keeps the tab
+token and connection ID in `sessionStorage`. Every later browser request sends
+the tab token as `x-agentmarkit-flow` and the connection ID as
+`x-agentmarkit-connection`; Network Observatory also requires the matching
+per-connection cookie. This lets two agents run setup in separate tabs without
+overwriting each other's cookies.
+
+The Network Observatory half of this handoff is implemented in this pull
+request. The AgentMarkit half still needs a companion pull request and has not
+been merged or tested end to end. Keep the Network Observatory pull request in
+draft. Do not deploy or describe the customer flow as live yet.
 
 ## What is shared and what stays separate
 
@@ -124,7 +172,7 @@ curl --fail-with-body --silent --show-error \
 The protected preflight calls Composio and checks that the auth config exists,
 uses custom OAuth2 credentials for Gmail, is enabled for Tool Router, and has
 exactly the `gmail.metadata` Gmail permission. Run it after any Composio,
-Google, Worker-secret, or auth-config change and before creating a claim.
+Google, Worker-secret, or auth-config change and before creating a handoff.
 
 ## Add the connection when an agent is provisioned
 
@@ -147,9 +195,12 @@ The first response contains:
 - `mcpBearerToken`, the private credential installed on the named agent through
   the provisioning service. It must never be sent to the browser, Discord,
   logs, or analytics.
-- `claimUrl: null`. The customer link stays unavailable until the agent-side
-  installation has passed its check.
 - `connectionId`, which the provisioning service uses for status and revocation.
+
+The create response does not contain `handoffToken` or `connectUrl`. Installing
+the connection does not issue them either. Network Observatory returns them
+only for a later `issueHandoff` request with the verified owner and installation
+references.
 
 Creation is idempotent by `requestId`. If a later request uses the same ID and
 all four identity fields still match, the API returns the same connection and
@@ -192,11 +243,26 @@ After the agent-side probe passes, call `PATCH /api/admin/agent-connections`:
 }
 ```
 
-The PATCH response contains the short-lived, one-time `claimUrl`. For the
-controlled Day test, keep it private and do not open it before the installation
-check passes. For production, do not hand this bearer link directly to a
-customer. The **Connect Gmail** action must first verify the signed-in
-AgentMarkit owner and create an owner-bound handoff.
+This install PATCH returns no handoff token. It only records that the agent-side
+check passed. AgentMarkit does not request a handoff until the authenticated
+owner later chooses **Connect Gmail** for this exact machine.
+
+AgentMarkit can check a connection without retrieving either secret:
+
+```bash
+curl --fail-with-body --silent --show-error \
+  -H "Authorization: Bearer ${INVITE_ADMIN_TOKEN}" \
+  "https://connect.agentmarkit.com/api/admin/agent-connections?connectionId=acn_example"
+```
+
+The GET response contains only `connectionId`, `agentName`, `state`,
+`installed`, and `handoffExpiresAt`. It does not include `mcpUrl`,
+`mcpBearerToken`, `handoffToken`, or `connectUrl`.
+
+After the owner and machine check, AgentMarkit calls PATCH again with
+`issueHandoff: true`, plus the same `ownerRef` and `installationRef` used to
+create the connection. Network Observatory checks those values against the
+stored grant before returning the server-only handoff response shown above.
 
 The operator CLI exposes the same actions:
 
@@ -210,23 +276,29 @@ python3 onboarding/scripts/provision_agent_connection.py \
   --secret-file "/private/operator/path/day-mcp.json"
 
 python3 onboarding/scripts/provision_agent_connection.py \
-  --url "$NETWORK_OBSERVATORY_CONNECT_URL" installed 'acn_CONNECTION_ID' \
-  --secret-file "/private/operator/path/day-claim.json"
+  --url "$NETWORK_OBSERVATORY_CONNECT_URL" installed 'acn_CONNECTION_ID'
 
 python3 onboarding/scripts/provision_agent_connection.py \
-  --url "$NETWORK_OBSERVATORY_CONNECT_URL" rotate 'acn_CONNECTION_ID' \
-  --secret-file "/private/operator/path/day-new-claim.json"
+  --url "$NETWORK_OBSERVATORY_CONNECT_URL" handoff 'acn_CONNECTION_ID' \
+  --owner-ref "stable-opaque-customer-id" \
+  --installation-ref "stable-agent-installation-id" \
+  --secret-file "/private/operator/path/day-handoff.json"
 ```
 
-The CLI writes the full response to a new file with mode `0600` and redacts the
-bearer token and claim link from terminal output. It refuses to overwrite an
-existing file. AgentMarkit's provisioning service should call the API directly
-and pass the bearer through its secret channel instead of using this manual
-handoff.
+The `create` and `handoff` commands write their secret responses to new files
+with mode `0600`. They redact the MCP bearer and handoff token from terminal
+output and refuse to overwrite an existing file. `installed` returns only safe
+status and needs no secret file. AgentMarkit's provisioning service should call
+the API directly instead of using this operator helper.
 
-Use `rotate` when a claim link expires or the person opens it but does not start
-Google authorization. Once Google authorization has started, revoke the
-connection and create a new one instead of reusing its Composio session.
+The server sets the handoff lifetime. There is no duration option. An active,
+unopened handoff is reused. An expired one is replaced the next time the
+authenticated AgentMarkit action requests a handoff. After a handoff is opened,
+new handoff requests are refused while its two-hour browser flow is active. If
+that browser flow expires before Google authorization starts, AgentMarkit can
+request a fresh five-minute handoff. Once Google authorization has started,
+revoke the connection and create a new one instead of reusing its Composio
+session.
 
 ## Intended customer flow
 
@@ -240,14 +312,16 @@ connection and create a new one instead of reusing its Composio session.
 The customer never enters an email address, handles a gateway URL, runs a
 terminal command, or pastes anything into their agent.
 
-If someone opens `connect.agentmarkit.com` without a valid AgentMarkit claim,
+If someone opens `connect.agentmarkit.com` without a valid AgentMarkit handoff,
 the page must not offer a generic Gmail form. It sends them back to **My
 agents**, where they can choose the agent first.
 
 ## Day test
 
-Day already exists, so this first test is a controlled operator run. It is not
-proof that the customer identity binding is ready.
+Day already exists, so this first test is a controlled operator run. The
+intended browser flow cannot be tested until the AgentMarkit companion exists.
+An operator-only harness can exercise the Network Observatory half, but that is
+not proof that the owner and machine binding works.
 
 1. Enable Composio callback identity verification with the hosted verifier URL.
 2. Run the protected preflight and require an HTTP 200 result with every check
@@ -258,9 +332,13 @@ proof that the customer identity binding is ready.
    and reference it from the MCP header. Do not put the token in a URL, shell
    command, chat, or command log.
 5. Probe the endpoint and confirm that it lists exactly the two expected tools.
-6. Mark the connection installed and retrieve its one-time claim URL.
-7. The operator running the controlled test opens the claim URL privately in
-   the browser that will finish Google authorization. Do not forward it.
+6. Mark the connection installed. Confirm that this response contains no
+   `handoffToken` or `connectUrl`.
+7. For a Network-only test, have the operator harness request a handoff with
+   Day's exact `ownerRef` and `installationRef`. Put the returned token in the
+   per-connection cookie with `Max-Age` capped at the seconds remaining until
+   `handoffExpiresAt`, then open `connectUrl`. Do not put the token in a URL or
+   browser script.
 8. Confirm the page names Day, then authorize the approved test Gmail account.
 9. Ask, "Who have I emailed recently?" Confirm that Day receives sender,
    recipient, date, and label details. Confirm that no subject, message text,

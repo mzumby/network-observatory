@@ -17,12 +17,14 @@ test("the customer flow starts from an agent and never asks for copy and paste",
   assert.match(page, /Continue to Google/);
   assert.match(page, /cannot\s+read what your messages say/);
   assert.match(page, /\/api\/connections\/current/);
-  assert.match(page, /\/api\/connections\/claim/);
+  assert.match(page, /\/api\/connections\/handoff/);
   assert.match(page, /\/api\/connections\/authorize/);
   assert.match(page, /window\.history\.replaceState/);
   assert.match(page, /window\.location\.assign\(data\.connectUrl\)/);
+  assert.match(page, /credentials:\s*"same-origin"/);
   assert.match(page, /sessionStorage\.setItem\(FLOW_TAB_KEY, data\.tabToken\)/);
   assert.match(page, /"x-agentmarkit-flow"/);
+  assert.match(page, /"x-agentmarkit-connection"/);
   assert.match(page, /including Cc and Bcc recipients/);
   assert.match(page, /stable message and thread IDs/);
   assert.doesNotMatch(page, /type="email"|clipboard|hermesCommand|mcpUrl/i);
@@ -31,6 +33,7 @@ test("the customer flow starts from an agent and never asks for copy and paste",
 
   assert.match(connected, /\/api\/connections\/status/);
   assert.match(connected, /"x-agentmarkit-flow"/);
+  assert.match(connected, /"x-agentmarkit-connection"/);
   assert.match(connected, /status\?\.state === "connected"/);
   assert.match(connected, /Gmail is connected to/);
   assert.doesNotMatch(connected, /Google approved|one more step|setup command/i);
@@ -50,18 +53,22 @@ test("browser routes never return the private agent connection", async () => {
     read("../app/api/connections/authorize/route.ts"),
     read("../app/api/connections/current/route.ts"),
     read("../app/api/connections/status/route.ts"),
+    read("../app/api/connections/verify/route.ts"),
   ]);
   const browserSurface = sources.join("\n");
 
   assert.doesNotMatch(browserSurface, /hermesCommand|mcpUrl|\/api\/mcp\/|nobs_/i);
   assert.match(browserSurface, /connectUrl/);
   assert.match(browserSurface, /SameSite=Lax|browserTokenFromRequest/);
+  assert.match(browserSurface, /connectionIdFromRequest/);
+  assert.match(browserSurface, /record\.id !== connectionId/);
 });
 
-test("agent claims are server-created, one-time, and stored as hashes", async () => {
-  const [admin, claim, identity, database, schema, migrationBase, migrationIndex, migrationCleanup, migrationRevokeState, migrationBrowserIdentity, retiredProvision, retiredInvites] = await Promise.all([
+test("agent handoffs are server-created, browser-bound, one-time, and stored as hashes", async () => {
+  const [admin, handoff, boundedJson, identity, database, schema, migrationBase, migrationIndex, migrationCleanup, migrationRevokeState, migrationBrowserIdentity, retiredProvision, retiredInvites] = await Promise.all([
     read("../app/api/admin/agent-connections/route.ts"),
-    read("../app/api/connections/claim/route.ts"),
+    read("../app/api/connections/handoff/route.ts"),
+    read("../lib/bounded-json.mjs"),
     read("../lib/agent-connections.ts"),
     read("../lib/database.ts"),
     read("../db/schema.ts"),
@@ -80,7 +87,22 @@ test("agent claims are server-created, one-time, and stored as hashes", async ()
   assert.match(admin, /ownerRef,\s*installationRef,\s*(?:existing|raced)?\.?id/);
   assert.match(identity, /JSON\.stringify\(\[\s*ownerRef,\s*installationRef,\s*connectionId/);
   assert.match(admin, /requestId/);
-  assert.match(admin, /claimUrl/);
+  assert.match(admin, /handoffToken/);
+  assert.match(admin, /connectUrl/);
+  assert.match(admin, /export async function GET/);
+  assert.match(admin, /handoffExpiresAt/);
+  assert.match(admin, /HANDOFF_SESSION_MS/);
+  assert.match(identity, /HANDOFF_SESSION_MS = 5 \* 60_000/);
+  assert.match(admin, /new Date\(0\)\.toISOString\(\)/);
+  assert.doesNotMatch(admin, /expiresInHours|expiryHours/);
+  const safeStatus = admin.slice(
+    admin.indexOf("export async function GET"),
+    admin.indexOf("function matchesProvisioningRequest"),
+  );
+  assert.doesNotMatch(
+    safeStatus,
+    /publicRecord|mcpBearerToken|handoffToken|connectUrl|mcpUrl/,
+  );
   assert.match(admin, /mcpUrl/);
   assert.match(admin, /mcpBearerToken/);
   assert.match(
@@ -95,14 +117,29 @@ test("agent claims are server-created, one-time, and stored as hashes", async ()
   assert.doesNotMatch(admin, /\/api\/mcp\/\$\{tokens\.mcpToken\}/);
   assert.doesNotMatch(admin, /console\.(?:log|info|debug)/);
 
-  assert.match(claim, /sha256\(token\)/);
-  assert.match(claim, /set-cookie/);
-  assert.match(claim, /tabToken/);
-  assert.match(claim, /openAgentConnectionClaim/);
-  assert.match(claim, /URL fragment/);
-  assert.match(claim, /before any call to Composio begins/);
-  assert.doesNotMatch(claim, /\/claim\/\$\{tokens\.claimToken\}/);
-  assert.match(admin, /#claim=\$\{encodeURIComponent\(tokens\.claimToken\)\}/);
+  assert.match(handoff, /agentMarkitHandoffTokenFromRequest\(request, connectionId\)/);
+  assert.match(handoff, /trustedHandoffRequest/);
+  assert.match(handoff, /readBoundedJson\(request\)/);
+  assert.match(boundedJson, /size > maxBytes/);
+  assert.match(handoff, /checkRateLimit/);
+  assert.match(handoff, /cf-connecting-ip/);
+  assert.match(handoff, /sha256\(token\)/);
+  assert.match(handoff, /record\.id !== connectionId/);
+  assert.match(handoff, /HANDOFF_TOKEN_RE\.test\(token\)/);
+  assert.doesNotMatch(handoff, /body\?\.token|\{ token\?: string \}/);
+  assert.match(handoff, /headers\.append\("set-cookie", cookie\)/);
+  assert.match(handoff, /clearAgentMarkitHandoffCookie/);
+  assert.match(handoff, /tabToken/);
+  assert.match(handoff, /openAgentConnectionHandoff/);
+  assert.match(handoff, /HttpOnly parent-domain cookie/);
+  assert.match(handoff, /non-secret connection ID/);
+  assert.match(handoff, /before any call to Composio begins/);
+  assert.doesNotMatch(handoff, /\/claim\/\$\{tokens\.handoffToken\}/);
+  assert.match(admin, /#connection=\$\{encodeURIComponent\(record\.id\)\}/);
+  assert.doesNotMatch(admin, /#claim=/);
+  assert.match(identity, /handoff-cookie\.mjs/);
+  assert.match(identity, /browser-flow-cookie\.mjs/);
+  assert.match(handoff, /browserCookie\(flowToken, request\.url, connectionId\)/);
   assert.match(admin, /matchesProvisioningRequest\(raced, expected\)/);
   assert.match(database, /claim_opened_at IS NULL/);
   assert.match(database, /installed_at IS NOT NULL/);
@@ -111,13 +148,17 @@ test("agent claims are server-created, one-time, and stored as hashes", async ()
     database,
     /WHERE mcp_token_hash = \? AND installed_at IS NOT NULL/,
   );
-  assert.match(database, /rotateAgentConnectionClaim/);
+  assert.match(database, /issueAgentConnectionHandoff/);
+  assert.match(database, /claim_expires_at <= \?/);
+  assert.match(database, /installed_at IS NOT NULL/);
   assert.match(database, /authorization_started_at = \?/);
   assert.match(database, /browser_token_hash = \? AND browser_tab_token_hash = \?/);
   assert.match(database, /browser_token_expires_at > \?/);
   assert.match(database, /attemptStartedAt/);
   assert.match(admin, /Boolean\(record\.installed_at\)/);
-  assert.match(admin, /rotateClaim/);
+  assert.match(admin, /issueHandoff/);
+  assert.match(admin, /record\.installation_ref !== installationRef/);
+  assert.match(admin, /record\.user_id !== expectedUserId/);
   assert.match(admin, /deleteConnectedAccount/);
   assert.doesNotMatch(admin, /revokeConnectedAccount/);
   assert.match(admin, /recordAgentConnectionRemoteCleanup/);
@@ -185,7 +226,7 @@ test("health is local-only and the protected preflight verifies permissions", as
     read("../app/api/connections/authorize/route.ts"),
   ]);
 
-  assert.match(health, /mode:\s*"agent-claim"/);
+  assert.match(health, /mode:\s*"agentmarkit-browser-handoff"/);
   assert.match(health, /declared:\s*GMAIL_METADATA_SCOPE/);
   assert.match(health, /protected admin preflight/);
   assert.match(health, /COMPOSIO_API_KEY/);
@@ -211,7 +252,9 @@ test("the operator CLI keeps credentials out of terminal output", async () => {
   assert.match(script, /os\.O_EXCL/);
   assert.match(script, /0o600/);
   assert.match(script, /print_redacted/);
-  assert.match(script, /"mcpBearerToken", "claimUrl"/);
+  assert.match(script, /"mcpBearerToken", "handoffToken"/);
+  assert.match(script, /"issueHandoff": True/);
+  assert.doesNotMatch(script, /rotateHandoff|expiresInHours|--hours/);
   assert.match(script, /--secret-file/);
   const reserve = script.indexOf(
     "secret_file, descriptor = reserve_secret_file(args.secret_file)",

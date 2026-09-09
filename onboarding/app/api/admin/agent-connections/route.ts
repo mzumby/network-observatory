@@ -1,6 +1,7 @@
 import {
   agentConnectionTokens,
   connectionState,
+  HANDOFF_SESSION_MS,
   safeAgentReturnUrl,
   userIdForGrant,
 } from "@/lib/agent-connections";
@@ -19,7 +20,7 @@ import {
   markAgentConnectionInstalled,
   recordAgentConnectionConnectedAccount,
   recordAgentConnectionRemoteCleanup,
-  rotateAgentConnectionClaim,
+  issueAgentConnectionHandoff,
   revokeAgentConnection,
 } from "@/lib/database";
 import { requireRuntimeConfig } from "@/lib/runtime";
@@ -28,16 +29,11 @@ export const dynamic = "force-dynamic";
 
 const REF_RE = /^[A-Za-z0-9._:@/-]{3,180}$/;
 const REQUEST_RE = /^[A-Za-z0-9._:-]{8,180}$/;
+const CONNECTION_ID_RE = /^acn_[a-f0-9]{24}$/;
 const CONTROL_CHARACTERS = /[\u0000-\u001f\u007f]/;
 
 function textField(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
-}
-
-function expiryHours(value: unknown, fallback = 168) {
-  if (value === undefined) return fallback;
-  if (typeof value !== "number" || !Number.isFinite(value)) return null;
-  return Math.min(Math.max(value, 1), 720);
 }
 
 async function authorized(request: Request, expected: string) {
@@ -61,20 +57,23 @@ function reply(body: unknown, status = 200) {
 async function publicRecord(
   request: Request,
   record: NonNullable<Awaited<ReturnType<typeof getAgentConnectionById>>>,
-  reveal: { mcpBearer?: boolean; claim?: boolean } = {},
+  reveal: { mcpBearer?: boolean; handoff?: boolean } = {},
 ) {
   const runtime = requireRuntimeConfig();
   const origin = new URL(request.url).origin;
-  const tokens = await agentConnectionTokens(
-    runtime.IDENTITY_PEPPER,
-    record.id,
-    record.claim_expires_at,
-  );
-  const claimAvailable =
+  const handoffAvailable =
     Boolean(record.installed_at) &&
     !record.claim_opened_at &&
     !record.revoked_at &&
     record.claim_expires_at > new Date().toISOString();
+  const tokens =
+    reveal.mcpBearer || reveal.handoff
+      ? await agentConnectionTokens(
+          runtime.IDENTITY_PEPPER,
+          record.id,
+          record.claim_expires_at,
+        )
+      : null;
 
   return {
     connectionId: record.id,
@@ -82,16 +81,44 @@ async function publicRecord(
     state: connectionState(record),
     installed: Boolean(record.installed_at),
     mcpUrl: `${origin}/api/mcp`,
-    ...(reveal.mcpBearer ? { mcpBearerToken: tokens.mcpToken } : {}),
-    ...(reveal.claim
+    ...(reveal.mcpBearer && tokens ? { mcpBearerToken: tokens.mcpToken } : {}),
+    ...(reveal.handoff
       ? {
-          claimUrl: claimAvailable
-            ? `${origin}/#claim=${encodeURIComponent(tokens.claimToken)}`
+          connectUrl: handoffAvailable
+            ? `${origin}/#connection=${encodeURIComponent(record.id)}`
             : null,
+          handoffToken: handoffAvailable && tokens ? tokens.handoffToken : null,
         }
       : {}),
-    claimExpiresAt: record.claim_expires_at,
+    handoffExpiresAt: handoffAvailable ? record.claim_expires_at : null,
   };
+}
+
+export async function GET(request: Request) {
+  const runtime = requireRuntimeConfig();
+  if (!(await authorized(request, runtime.INVITE_ADMIN_TOKEN))) {
+    return reply({ error: "Unauthorized" }, 401);
+  }
+  const connectionId = textField(new URL(request.url).searchParams.get("connectionId"));
+  if (!CONNECTION_ID_RE.test(connectionId)) {
+    return reply({ error: "Provide a valid connection ID." }, 400);
+  }
+  const record = await getAgentConnectionById(connectionId);
+  return record
+    ? reply({
+        connectionId: record.id,
+        agentName: record.agent_name,
+        state: connectionState(record),
+        installed: Boolean(record.installed_at),
+        handoffExpiresAt:
+          record.installed_at &&
+          !record.claim_opened_at &&
+          !record.revoked_at &&
+          record.claim_expires_at > new Date().toISOString()
+            ? record.claim_expires_at
+            : null,
+      })
+    : reply({ error: "Connection not found." }, 404);
 }
 
 function matchesProvisioningRequest(
@@ -124,7 +151,6 @@ export async function POST(request: Request) {
         installationRef?: string;
         agentName?: string;
         returnUrl?: string;
-        expiresInHours?: number;
       }
     | null;
   const requestId = textField(body?.requestId);
@@ -132,7 +158,6 @@ export async function POST(request: Request) {
   const installationRef = textField(body?.installationRef);
   const agentName = textField(body?.agentName);
   const returnUrl = safeAgentReturnUrl(body?.returnUrl);
-  const expiresInHours = expiryHours(body?.expiresInHours);
 
   if (
     !REQUEST_RE.test(requestId) ||
@@ -141,7 +166,6 @@ export async function POST(request: Request) {
     !agentName ||
     agentName.length > 80 ||
     CONTROL_CHARACTERS.test(agentName) ||
-    expiresInHours === null ||
     (body?.returnUrl && !returnUrl)
   ) {
     return reply({ error: "Provide a valid request, owner, installation, and agent name." }, 400);
@@ -174,8 +198,10 @@ export async function POST(request: Request) {
     id,
   );
   const expected = { userId, installationRef, agentName, returnUrl };
-  const claimExpiresAt = new Date(Date.now() + expiresInHours * 60 * 60_000).toISOString();
-  const tokens = await agentConnectionTokens(runtime.IDENTITY_PEPPER, id, claimExpiresAt);
+  // A new grant is dormant. A five-minute handoff is issued only after
+  // AgentMarkit rechecks the signed-in owner and exact installation.
+  const handoffExpiresAt = new Date(0).toISOString();
+  const tokens = await agentConnectionTokens(runtime.IDENTITY_PEPPER, id, handoffExpiresAt);
   try {
     await createAgentConnection({
       id,
@@ -185,8 +211,8 @@ export async function POST(request: Request) {
       agentName,
       returnUrl,
       mcpTokenHash: tokens.mcpTokenHash,
-      claimTokenHash: tokens.claimTokenHash,
-      claimExpiresAt,
+      handoffTokenHash: tokens.handoffTokenHash,
+      handoffExpiresAt,
     });
   } catch {
     const raced = await getAgentConnectionByRequestId(requestId);
@@ -222,15 +248,16 @@ export async function PATCH(request: Request) {
     | {
         connectionId?: string;
         installed?: boolean;
-        rotateClaim?: boolean;
-        expiresInHours?: number;
+        issueHandoff?: boolean;
+        ownerRef?: string;
+        installationRef?: string;
       }
     | null;
   const connectionId = textField(body?.connectionId);
   const installing = body?.installed === true;
-  const rotating = body?.rotateClaim === true;
-  if (!connectionId.startsWith("acn_") || installing === rotating) {
-    return reply({ error: "Choose either installed or rotateClaim for this connection." }, 400);
+  const issuingHandoff = body?.issueHandoff === true;
+  if (!CONNECTION_ID_RE.test(connectionId) || installing === issuingHandoff) {
+    return reply({ error: "Choose either installed or issueHandoff for this connection." }, 400);
   }
 
   if (installing) {
@@ -238,9 +265,29 @@ export async function PATCH(request: Request) {
       return reply({ error: "Connection not found." }, 404);
     }
   } else {
+    const ownerRef = textField(body?.ownerRef);
+    const installationRef = textField(body?.installationRef);
+    if (!REF_RE.test(ownerRef) || !REF_RE.test(installationRef)) {
+      return reply({ error: "Provide the verified owner and installation." }, 400);
+    }
     const record = await getAgentConnectionById(connectionId);
     if (!record || record.revoked_at) {
       return reply({ error: "Connection not found." }, 404);
+    }
+    const expectedUserId = await userIdForGrant(
+      runtime.IDENTITY_PEPPER,
+      ownerRef,
+      installationRef,
+      connectionId,
+    );
+    if (
+      record.installation_ref !== installationRef ||
+      record.user_id !== expectedUserId
+    ) {
+      return reply({ error: "Connection not found." }, 404);
+    }
+    if (!record.installed_at) {
+      return reply({ error: "Your agent is still being set up." }, 409);
     }
     if (record.authorized_at) {
       return reply({ error: "Gmail is already connected." }, 409);
@@ -251,24 +298,46 @@ export async function PATCH(request: Request) {
         409,
       );
     }
-    const expiresInHours = expiryHours(body?.expiresInHours);
-    if (expiresInHours === null) {
-      return reply({ error: "Provide a valid claim-link lifetime." }, 400);
+    const issuedAt = new Date().toISOString();
+    if (
+      record.claim_opened_at &&
+      (!record.browser_token_expires_at ||
+        record.browser_token_expires_at > issuedAt)
+    ) {
+      return reply(
+        { error: "Finish the Gmail connection already open in this browser." },
+        409,
+      );
     }
-    const claimExpiresAt = new Date(Date.now() + expiresInHours * 60 * 60_000).toISOString();
-    const tokens = await agentConnectionTokens(
-      runtime.IDENTITY_PEPPER,
-      connectionId,
-      claimExpiresAt,
-    );
-    if (!(await rotateAgentConnectionClaim(connectionId, tokens.claimTokenHash, claimExpiresAt))) {
-      return reply({ error: "A new setup link could not be created." }, 409);
+    if (record.claim_opened_at || record.claim_expires_at <= issuedAt) {
+      const handoffExpiresAt = new Date(
+        new Date(issuedAt).getTime() + HANDOFF_SESSION_MS,
+      ).toISOString();
+      const tokens = await agentConnectionTokens(
+        runtime.IDENTITY_PEPPER,
+        connectionId,
+        handoffExpiresAt,
+      );
+      await issueAgentConnectionHandoff(
+        connectionId,
+        tokens.handoffTokenHash,
+        handoffExpiresAt,
+        issuedAt,
+      );
     }
   }
   const record = await getAgentConnectionById(connectionId);
-  return record
-    ? reply(await publicRecord(request, record, { claim: true }))
-    : reply({ error: "Connection not found." }, 404);
+  if (!record) return reply({ error: "Connection not found." }, 404);
+  if (
+    issuingHandoff &&
+    (!record.installed_at ||
+      record.claim_opened_at ||
+      record.revoked_at ||
+      record.claim_expires_at <= new Date().toISOString())
+  ) {
+    return reply({ error: "A Gmail connection handoff could not be created." }, 409);
+  }
+  return reply(await publicRecord(request, record, { handoff: issuingHandoff }));
 }
 
 export async function DELETE(request: Request) {
@@ -280,6 +349,9 @@ export async function DELETE(request: Request) {
     | { connectionId?: string }
     | null;
   const connectionId = textField(body?.connectionId);
+  if (!CONNECTION_ID_RE.test(connectionId)) {
+    return reply({ error: "Provide a valid connection ID." }, 400);
+  }
   let record = await getAgentConnectionById(connectionId);
   if (!record) return reply({ error: "Connection not found." }, 404);
   if (record.remote_cleanup_at) {

@@ -64,10 +64,24 @@ this design avoids. Tell the user: "Open this agent in AgentMarkit, choose
 Connections, then Gmail." AgentMarkit must prepare the connection for the
 specific agent. Do not send the user to a generic Connect page.
 
-The managed customer flow is not live yet. It is limited to agents that
-AgentMarkit has explicitly provisioned for a controlled test. If this agent is
-not part of that test, say the Gmail connection is not available yet. Do not
-offer a claim link or improvise a manual setup.
+The managed customer flow is not live yet. Only an operator-controlled Day
+harness may exercise the Network Observatory half. If the operator has not
+explicitly put this agent in that test, say the Gmail connection is not
+available yet. Do not offer a setup link or improvise a manual setup.
+
+Setup must begin on this exact agent's **Connections > Gmail** page.
+AgentMarkit checks the signed-in owner and machine, then asks Network Observatory
+for a one-use handoff with the verified owner and installation references.
+Network Observatory checks both again. AgentMarkit puts the token in a
+per-connection HttpOnly cookie for at most five minutes. The browser sees only a
+non-secret Connect address. Network Observatory requires both that handoff and
+the saved connection ID before it opens the Google flow. Never ask the user to
+copy a token or address between services.
+
+The Network Observatory half is implemented. The AgentMarkit companion still
+needs to be merged and tested, so do not describe this as a live customer
+feature yet. An operator-only harness may test the Network Observatory half,
+but the intended Day browser flow cannot run until the companion exists.
 
 After the map is built, offer this once: "Want to add Gmail metadata search?
 It can only see who you exchanged email with and when, never the messages

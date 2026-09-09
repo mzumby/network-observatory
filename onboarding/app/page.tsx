@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 
 const DISCLOSURE_VERSION = "gmail-metadata-v1";
 const FLOW_TAB_KEY = "agentmarkit_gmail_flow";
+const FLOW_CONNECTION_KEY = "agentmarkit_gmail_connection_id";
 
 type Connection = {
   connectionId: string;
@@ -13,29 +14,35 @@ type Connection = {
   returnUrl: string | null;
 };
 
-// React runs effects twice in development. Keep the one-time claim exchange
+// React runs effects twice in development. Keep the one-time handoff exchange
 // alive between those effect runs so the first request is not cancelled after
 // the URL fragment has already been removed.
-let pendingClaimExchange: Promise<void> | null = null;
+let pendingHandoffExchange: Promise<void> | null = null;
 
 class ConnectionPageError extends Error {}
 
-function exchangeClaim(token: string) {
-  return fetch("/api/connections/claim", {
+function exchangeHandoff(connectionId: string) {
+  return fetch("/api/connections/handoff", {
     method: "POST",
+    credentials: "same-origin",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ token }),
+    body: JSON.stringify({ connectionId }),
   }).then(async (response) => {
     const data = (await response.json()) as { error?: string; tabToken?: string };
     if (!response.ok || !data.tabToken?.startsWith("tab_")) {
-      throw new ConnectionPageError(data.error || "This setup link is not working.");
+      throw new ConnectionPageError(data.error || "We could not open this Gmail connection.");
     }
     window.sessionStorage.setItem(FLOW_TAB_KEY, data.tabToken);
+    window.sessionStorage.setItem(FLOW_CONNECTION_KEY, connectionId);
   });
 }
 
 function flowHeader() {
-  return { "x-agentmarkit-flow": window.sessionStorage.getItem(FLOW_TAB_KEY) || "" };
+  return {
+    "x-agentmarkit-flow": window.sessionStorage.getItem(FLOW_TAB_KEY) || "",
+    "x-agentmarkit-connection":
+      window.sessionStorage.getItem(FLOW_CONNECTION_KEY) || "",
+  };
 }
 
 type PageState =
@@ -58,11 +65,11 @@ export default function Home() {
   const [error, setError] = useState("");
 
   useEffect(() => {
-    const claimToken = new URLSearchParams(window.location.hash.slice(1)).get("claim");
-    if (claimToken && !pendingClaimExchange) {
-      pendingClaimExchange = exchangeClaim(claimToken);
+    const connectionId = new URLSearchParams(window.location.hash.slice(1)).get("connection");
+    if (connectionId && !pendingHandoffExchange) {
+      pendingHandoffExchange = exchangeHandoff(connectionId);
     }
-    if (claimToken) {
+    if (connectionId) {
       window.history.replaceState(
         null,
         "",
@@ -90,7 +97,7 @@ export default function Home() {
         }
         return;
       }
-      if (pendingClaimExchange) await pendingClaimExchange;
+      if (pendingHandoffExchange) await pendingHandoffExchange;
 
       const response = await fetch("/api/connections/current", {
         cache: "no-store",
@@ -106,7 +113,7 @@ export default function Home() {
         | null;
       if (!response.ok || !data) {
         throw new ConnectionPageError(
-          data?.error || "This setup link is not working.",
+          data?.error || "We could not open this Gmail connection.",
         );
       }
       if (!stopped) setPage({ kind: "ready", connection: data });
@@ -175,7 +182,7 @@ export default function Home() {
       <main className="connection-page">
         {page.kind === "loading" ? (
           <section className="connection-sheet status-sheet" aria-live="polite">
-            <p>Checking your setup link...</p>
+            <p>Opening your Gmail connection...</p>
           </section>
         ) : null}
 
@@ -196,7 +203,7 @@ export default function Home() {
         {page.kind === "error" ? (
           <section className="connection-sheet">
             <p className="section-label">Gmail connection</p>
-            <h1>This setup link is not working</h1>
+            <h1>We could not open this Gmail connection</h1>
             <p className="intro">{page.message}</p>
             <p className="help-copy">
               Open your agent in AgentMarkit and start again from its Connections page.

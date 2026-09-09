@@ -2,6 +2,7 @@ import {
   DISCLOSURE_VERSION,
   browserTabTokenFromRequest,
   browserTokenFromRequest,
+  connectionIdFromRequest,
 } from "@/lib/agent-connections";
 import {
   createGmailLink,
@@ -33,7 +34,8 @@ function reply(body: unknown, status = 200) {
 
 export async function POST(request: Request) {
   const runtime = requireRuntimeConfig();
-  const browserToken = browserTokenFromRequest(request);
+  const connectionId = connectionIdFromRequest(request);
+  const browserToken = browserTokenFromRequest(request, connectionId);
   const browserTabToken = browserTabTokenFromRequest(request);
   if (
     !browserToken.startsWith("flow_") ||
@@ -49,7 +51,7 @@ export async function POST(request: Request) {
     browserTokenHash,
     browserTabTokenHash,
   );
-  if (!record) return reply({ error: "This setup session has expired. Start again from your agent." }, 401);
+  if (!record || record.id !== connectionId) return reply({ error: "This Gmail session has expired. Start again from your agent." }, 401);
   if (!record.installed_at) return reply({ error: "Your agent is still being set up. Try again shortly." }, 409);
   if (record.revoked_at) return reply({ error: "This Gmail connection has been turned off." }, 410);
   if (record.authorized_at) return reply({ error: `Gmail is already connected to ${record.agent_name}.` }, 409);
@@ -57,8 +59,8 @@ export async function POST(request: Request) {
   const body = (await request.json().catch(() => null)) as
     | { connectionId?: string; accepted?: boolean; disclosureVersion?: string }
     | null;
-  if (body?.connectionId !== record.id) {
-    return reply({ error: "This browser tab belongs to a different Gmail setup." }, 409);
+  if (!body || body.connectionId !== connectionId) {
+    return reply({ error: "This browser tab belongs to a different Gmail connection." }, 409);
   }
   if (body.accepted !== true || body.disclosureVersion !== DISCLOSURE_VERSION) {
     return reply({ error: "Review what this connection can access before continuing." }, 400);
