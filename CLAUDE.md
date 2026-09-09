@@ -48,8 +48,8 @@ optional and build on the earlier ones, so the map always comes first.
 user in plain language (count, span, top companies). Remind them function and
 seniority are *inferred from job titles*, not stated facts. Then teach by
 example — offer three starter questions: "Who do I know at <a real company
-from their map>?", "Who have I gone cold on?" (needs Gmail), and "Remind me
-to follow up with someone."
+from their map>?", "Who have I gone cold on?" (needs an existing Gmail
+connection), and "Remind me to follow up with someone."
 
 **Every answer about the graph follows the answer contract** in
 `skills/network-observatory/SKILL.md` ("How to talk about the graph"): one
@@ -252,13 +252,15 @@ check, the substring-match caveat (always name `matched_address` in your answer)
 and when subjects may be pulled. First run needs an OAuth client JSON at
 `data/gmail_oauth_client.json` and opens a one-click browser consent.
 
-**Hosted agents (Hermes/Agent37): skip the local OAuth script.** Prefer the
-Network Observatory Connect service described in `skills/network-observatory/SKILL.md`.
-It creates one private, revocable MCP endpoint per tester through the operator's
-custom Composio Gmail auth config. The project credential stays on the server,
-and the endpoint returns only allowlisted sender, recipient, date, label, and ID
-metadata. Feed those events to `trellis.py ingest` as described in
-`skills/email-recency.md`.
+**Hosted agents (Hermes/Agent37): skip the local OAuth script.** New hosted Gmail
+setup is temporarily unavailable, apart from the operator-controlled Day test
+harness. An already-working `network-observatory-gmail` connection may continue
+to be used, but do not re-create one with the retired Connect page, a manual
+setup command, a default Composio or Gmail tool, or a provider reconnect link.
+Future setup must start from **Connections > Gmail** on the exact agent in
+AgentMarkit, and only when that control is present. See
+`skills/network-observatory/SKILL.md` for the current boundary and
+`skills/email-recency.md` for metadata ingestion.
 
 ## Updating the tool
 

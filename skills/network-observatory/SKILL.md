@@ -1,7 +1,8 @@
 ---
 name: network-observatory
-version: 1.12.3
-description: Build, update, query, and optionally enrich a private professional network from a LinkedIn export using the public Network Observatory repository. Use when a user asks Hermes or another coding agent to set up their network map, warmth table, or People workbench; remember relationships with Trellis; connect the Network Observatory Gmail metadata endpoint; check email recency; ingest optional calendar or meeting events; prioritize, deprioritize, or set a follow-up date on someone; reconcile duplicate identities; or update an existing Observatory.
+description: Build, update, query, and optionally enrich a private professional network from a LinkedIn export using the public Network Observatory repository. Use when a user asks Hermes or another coding agent to set up their network map, warmth table, or People workbench; remember relationships with Trellis; use an existing Network Observatory Gmail metadata connection; check email recency; ingest optional calendar or meeting events; prioritize, deprioritize, or set a follow-up date on someone; reconcile duplicate identities; or update an existing Observatory.
+metadata:
+  version: "1.12.4"
 ---
 
 # Network Observatory
@@ -52,55 +53,27 @@ The map is one of three screens that share a design and a nav bar: the **map**
 working list). Warmth and People only say something once there's contact signal,
 so build them after the first enrichment pass and hand over one link, not three.
 
-## Connect optional Gmail metadata
+## Use optional Gmail metadata
 
-Do not ask for a Google client secret, Composio API key, token, or project
-credential. Those belong to the hosted onboarding service.
+New Gmail setup for hosted agents is temporarily unavailable, apart from the
+operator-controlled Day test harness. Do not use the retired Workers Connect
+page, ask the user to paste a private manual setup command, open a default
+Composio or Gmail connection, or send a provider reconnect link.
 
-If `network-observatory-gmail` is not configured on this agent, never work
-around it by connecting Gmail through your own Composio toolkit or any other
-default Gmail tool. Those request broad mailbox scopes, which is exactly what
-this design avoids. The Connect page below is the only path.
+First check whether `network-observatory-gmail` is already configured and
+working on this exact agent:
 
-After the map is built, offer this once: "Want to add Gmail metadata search?
-It can only see who you emailed and when, never the messages themselves."
-If the user says yes:
+- If it works, continue using the metadata tools below. Existing legacy
+  connections are allowed to keep working.
+- If it is missing, revoked, or disconnected, stop. Tell the user Gmail setup
+  is not available on this agent yet and continue with their LinkedIn map.
+- Do not re-provision a legacy connection through the old flow.
 
-Walk them through it in the page's own order — **the setup block comes before
-Google, and it is shown only once.** Sending them to Google first loses it.
-
-1. Send the user to
-   `https://network-observatory-connect.mari-network-observatory.workers.dev`
-   and have them enter the Gmail they want connected (there is no invite code).
-2. The page then shows **Step 1 — a block of text beginning `Run this: hermes
-   mcp add …`**. Ask them to copy the whole block and paste it to you *before
-   they touch anything else on the page*. It contains a private URL that acts
-   like a password and is never shown again. If you are on a screenshare, say
-   so — it will be visible to everyone watching, and it is worth pausing the
-   share for this step.
-3. Run the `hermes mcp add …` command from that block.
-4. Now have them click **Step 2 — Connect my Google account** and approve in
-   the browser. Google warns that the app is unverified; that is expected while
-   it is in Testing.
-5. If Google refuses with "access denied", they are not on the tester list
-   yet. Have them send the exact Gmail they used to the operator
-   (mari@filament.dm), wait for her confirmation, then retry the same page.
-   There are at most 100 tester seats, and access needs a one-click
-   reconnect every 7 days until Google verification lands.
-6. The new tools appear in your **NEXT** session, not this one — the Google
-   "You're done" page cannot know that, so say it plainly: have them start a
-   fresh chat and test there.
-
-   ```bash
-   hermes mcp test network-observatory-gmail
-   ```
-
-7. When the test passes, record durably — in your memory, notes, or runbook —
-   that email metadata search is installed via `network-observatory-gmail`
-   and is the only sanctioned Gmail path for this user: metadata-only by
-   design, never open a default Gmail or Composio connection for them.
-   Future sessions must reach for this server on any email-history or
-   contact-recency question.
+The future setup path is the exact agent in AgentMarkit, then **Connections >
+Gmail**. Direct the user there only when that control exists on their agent. Do
+not ask for a Google client secret, Composio API key, token, or project
+credential. The Day harness is for the operator's controlled test only, not a
+customer workaround.
 
 The private endpoint exposes only:
 
@@ -112,9 +85,8 @@ subjects, snippets, bodies, or attachments. Never try to work around that limit.
 Gmail's metadata scope does not permit the `q` search parameter, so sweep pages
 and match correspondents locally.
 
-If a tool returns `reconnectUrl`, give that link to the user, wait for them to
-finish Google authorization, then retry the same call. Google test access may
-require this again after seven days.
+If a tool returns `reconnectUrl`, do not send or follow it. Treat the connection
+as unavailable and explain that hosted Gmail setup is still paused.
 
 ## Ingest Gmail relationships
 
@@ -312,8 +284,8 @@ commands are plumbing.
   history", "who wrote last", "your map".
 - Source-state phrasing — one line, only when it changes the answer, and
   never twice in one conversation:
-  - LinkedIn only: "That's from your LinkedIn map. Connect Gmail and I can
-    tell you how warm these ties actually are."
+  - LinkedIn only: "That's from your LinkedIn map. Email recency needs an
+    existing Gmail metadata connection; new hosted setup is temporarily paused."
   - Gmail connected: answer with recency; when coverage is partial, say what
     the data does and doesn't reach.
   - Calendar connected: meetings just count; don't mention calendar unless
@@ -322,10 +294,10 @@ commands are plumbing.
     experience.
 - End a substantive answer with at most ONE offer — log a follow-up, open
   the table, or go deeper — not a menu of options.
-- When setup finishes (map built, or Gmail connected), teach by example:
-  offer exactly three starter questions — "Who have I gone cold on?",
-  "Who do I know at <a real company from their map>?", and "Remind me to
-  follow up with someone."
+- When setup finishes, teach by example. If Gmail is already connected, offer
+  "Who have I gone cold on?" Otherwise use a LinkedIn-only question. Also offer
+  "Who do I know at <a real company from their map>?" and "Remind me to follow
+  up with someone."
 
 ## Answering questions with the graph
 

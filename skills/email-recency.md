@@ -56,15 +56,21 @@ for making your own).
   feed `trellis capture` interactions, so radar and loops can reason over
   real email recency. Do that only when the user asks for it.
 
-## On hosted agents (Hermes): don't run this script, ingest instead
+## On hosted agents (Hermes): use an existing connection only
 
-`email_recency.py` is for agents on the user's own computer. If you are a
-hosted agent (Hermes, Agent37), do not set up OAuth here and do not ask the
-user for a client JSON, Google secret, or Composio key. Use the tester's private
-Network Observatory MCP endpoint. It keeps connector credentials on the hosted
-service and exposes only two metadata tools.
+`email_recency.py` is still for agents running on the user's own computer. If
+you are a hosted agent (Hermes, Agent37), do not set up local OAuth and do not
+ask the user for a client JSON, Google secret, or Composio key.
 
-The flow on a hosted agent:
+New hosted Gmail setup is temporarily unavailable, apart from the
+operator-controlled Day test harness. If this exact agent already has a working
+`network-observatory-gmail` connection, it may keep using it. If not, stop. Do
+not use the retired Connect page, ask for a private manual setup command, open a
+default Composio or Gmail connection, or send a provider reconnect link. Do not
+re-provision a disconnected legacy connection.
+
+Future setup starts from the exact agent in AgentMarkit, then **Connections >
+Gmail**, only when that control exists. For an existing working connection:
 
 1. Call `network_observatory_sweep_email_metadata`, 25 messages at a time.
    Follow `nextPageToken` only as far as the user's question needs. Gmail's
@@ -89,9 +95,8 @@ is safe: already-seen events are skipped. After ingest, `trellis.py recall`,
 script would have produced. Store who and when, not what was said.
 
 The hosted tools cannot return subject, snippet, body, or attachments. If a
-call returns `reconnectUrl`, send it privately to the user, wait for them to
-finish, then retry. While the Google OAuth app remains in Testing, this may be
-needed again after seven days.
+call returns `reconnectUrl`, do not send or follow it. Treat the connection as
+unavailable and tell the user hosted Gmail setup is paused.
 
 ## Design credit
 

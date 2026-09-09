@@ -1,5 +1,17 @@
 # Composio onboarding operations
 
+> [!WARNING]
+> **Frozen operator reference. Do not use this runbook to onboard anyone.**
+> New hosted Gmail setup is temporarily unavailable, apart from the
+> operator-controlled Day test harness. Do not send the retired Workers Connect
+> page, copy or run its manual setup command, substitute a default Composio or
+> Gmail connection, or send a provider reconnect link. Existing working legacy
+> metadata connections may continue to be used, but must not be re-provisioned
+> through this flow. Future setup must start from the exact agent in AgentMarkit
+> at **Connections > Gmail**, and only when that control exists. The details
+> below are retained solely for historical operation, incident response, and
+> retirement work.
+
 The public repository never contains a Composio key, Google client secret, or
 shared Google token. The hosted Connect service keeps the project credential on
 the server and gives each tester a separate, revocable endpoint.
