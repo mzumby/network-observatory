@@ -1,27 +1,21 @@
 import type { Metadata } from "next";
-import { Inter } from "next/font/google";
 import "./globals.css";
-
-const inter = Inter({
-  variable: "--font-inter",
-  subsets: ["latin"],
-});
 
 export const metadata: Metadata = {
   metadataBase: new URL(
-    "https://network-observatory-connect.mari-network-observatory.workers.dev",
+    "https://connect.agentmarkit.com",
   ),
-  title: "Connect Gmail | Network Observatory",
+  title: "Connect Gmail | AgentMarkit",
   description:
-    "Create a private Gmail metadata connection for your Network Observatory and Hermes agent.",
+    "Let your agent use who you emailed and when. It cannot read your messages.",
   icons: {
     icon: "/favicon.svg",
     shortcut: "/favicon.svg",
   },
   openGraph: {
-    title: "Connect Gmail | Network Observatory",
+    title: "Connect Gmail | AgentMarkit",
     description:
-      "Optional, private relationship recency for your LinkedIn network map.",
+      "Let your agent use who you emailed and when. It cannot read your messages.",
     type: "website",
     images: [
       {
@@ -34,9 +28,9 @@ export const metadata: Metadata = {
   },
   twitter: {
     card: "summary_large_image",
-    title: "Connect Gmail | Network Observatory",
+    title: "Connect Gmail | AgentMarkit",
     description:
-      "Optional, private relationship recency for your LinkedIn network map.",
+      "Let your agent use who you emailed and when. It cannot read your messages.",
     images: ["/og.png"],
   },
 };
@@ -48,7 +42,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body className={`${inter.variable} antialiased`}>{children}</body>
+      <body>{children}</body>
     </html>
   );
 }

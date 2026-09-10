@@ -35,13 +35,10 @@ https://raw.githubusercontent.com/maczumby/network-observatory/main/skills/netwo
 ```
 
 The LinkedIn map needs nothing from anyone: your export in, your map out, all
-on your machine. On your own computer, you can also add Gmail metadata locally
-with `scripts/email_recency.py`.
-
-New Gmail setup for hosted agents is temporarily paused while the exact-agent
-flow is finished. The old Connect page and manual setup command are retired.
-An already-working legacy metadata connection may still be used, but it must
-not be re-created through the old flow.
+on your machine. The optional Gmail piece uses a metadata-only connection
+(sender, recipients, and date). This connection cannot request message bodies.
+While Google verification is pending, your Gmail address needs to be on the
+operator's tester list. Your agent will tell you what to do if it is not.
 
 ## The fastest way to use it
 
@@ -77,17 +74,49 @@ hermes skills install \
   --yes
 ```
 
-The public repo does not contain baked-in authentication. New Gmail setup for
-hosted agents is temporarily unavailable, apart from the operator-controlled Day
-test harness. Do not use the retired Connect page, paste a private manual setup
-command, substitute a default Composio or Gmail connection, or follow a provider
-reconnect link.
+The public repo does not contain baked-in authentication. That is intentional.
+The AgentMarkit flow is designed to prepare a private, revocable connection for
+one named agent, then let its owner approve Google. The customer never handles a
+gateway credential, terminal command, or copy and paste step.
 
-If this agent already has a working `network-observatory-gmail` connection, it
-may keep using its metadata-only tools. If it is missing or disconnected, stop
-there. Once the exact agent has a **Connections > Gmail** control in AgentMarkit,
-that control will be the setup path. Do not send someone there unless the
-control is actually present on their agent.
+Network Observatory now has the secure half of the AgentMarkit handoff.
+AgentMarkit will check the signed-in owner and exact machine, request a one-use
+handoff token with the verified owner and installation references, and receive
+it over its server connection. Network Observatory derives the stored owner
+identity again and checks the exact installation. AgentMarkit puts the token in
+a per-connection HttpOnly cookie for at most five minutes. The browser receives
+only a non-secret Connect address. Network Observatory consumes the handoff into
+a per-connection, host-only flow cookie and a token kept in that browser tab
+before it starts Google approval. Separate agent setups do not overwrite each
+other.
+
+On a hosted agent, Gmail setup is available only when that exact agent has a
+**Connections > Gmail** control in AgentMarkit. When it is there, the owner uses
+that control, reviews the narrow access, and continues to Google. When it is
+absent, the agent should say setup is unavailable and wait. It must not fall
+back to a generic Connect page, an old Worker link, a manual command, or a broad
+Gmail or Composio connection. The Composio API key, Google client secret,
+handoff token, and agent gateway credential stay off the page.
+
+While the Google app is in Testing, the account being connected must be on the
+operator's tester list. If Google denies access, the owner should contact the
+operator with the exact Gmail address they chose, then try again after it is
+added.
+
+Gmail is still optional. The hosted endpoint can return only sender, recipients,
+date, labels, and stable message and thread IDs. It cannot return subjects,
+snippets, bodies, or attachments. Google may require test users to reconnect
+after seven days while the OAuth app remains in Testing. Operator setup and
+revocation are documented in `docs/COMPOSIO_ONBOARDING.md`.
+
+For operators, the AgentMarkit service is a side-by-side cutover to a new Worker
+and a new D1 database. A fresh database needs migrations `0000` through `0006`
+before deployment; deploying does not run them. Keep the old Worker, database,
+and Composio resources until every legacy `/api/mcp/[token]` agent has been
+re-provisioned, reconnected, and tested. Retiring the old service is a separate
+approved change. See
+[`docs/COMPOSIO_CUSTOM_GMAIL_RESET_GUIDE.md`](docs/COMPOSIO_CUSTOM_GMAIL_RESET_GUIDE.md)
+for the full runbook.
 
 ## Or run it yourself
 

@@ -1,7 +1,7 @@
 ---
 name: network-observatory
-version: 1.12.4
-description: Build, update, query, and optionally enrich a private professional network from a LinkedIn export using the public Network Observatory repository. Use when a user asks Hermes or another coding agent to set up their network map, warmth table, or People workbench; remember relationships with Trellis; use an existing Network Observatory Gmail metadata connection; check email recency; ingest optional calendar or meeting events; prioritize, deprioritize, or set a follow-up date on someone; reconcile duplicate identities; or update an existing Observatory.
+version: 1.13.0
+description: Build, update, query, and optionally enrich a private professional network from a LinkedIn export using the public Network Observatory repository. Use when a user asks Hermes or another coding agent to set up their network map, warmth table, or People workbench; remember relationships with Trellis; connect the Network Observatory Gmail metadata endpoint; check email recency; ingest optional calendar or meeting events; prioritize, deprioritize, or set a follow-up date on someone; reconcile duplicate identities; or update an existing Observatory.
 ---
 
 # Network Observatory
@@ -54,38 +54,77 @@ so build them after the first enrichment pass and hand over one link, not three.
 
 ## Use optional Gmail metadata
 
-New Gmail setup for hosted agents is temporarily unavailable, apart from the
-operator-controlled Day test harness. Do not use the retired Workers Connect
-page, ask the user to paste a private manual setup command, open a default
-Composio or Gmail connection, or send a provider reconnect link.
+Do not use the retired Workers Connect page, ask the user to paste a private
+manual setup command, open a default Composio or Gmail connection, or send a
+provider reconnect link.
 
-First check whether `network-observatory-gmail` is already configured and
-working on this exact agent:
+If `network-observatory-gmail` is already configured on this agent, use those
+tools. If it is not configured, offer setup only when this exact agent has a
+**Connections > Gmail** control in AgentMarkit. When the control exists, tell
+the user to open it. When it is absent, say Gmail setup is unavailable for this
+agent. Never work around that by using a generic Connect page, an old Worker
+link, a manual command, your own Composio toolkit, or another default Gmail
+tool. Those routes can expose credentials or request broader mailbox access.
 
-- If it works, continue using the metadata tools below. Existing legacy
-  connections are allowed to keep working.
-- If it is missing, revoked, or disconnected, stop. Tell the user Gmail setup
-  is not available on this agent yet and continue with their LinkedIn map.
-- Do not re-provision a legacy connection through the old flow.
+Setup must begin on this exact agent's **Connections > Gmail** page.
+AgentMarkit checks the signed-in owner and machine, then asks Network Observatory
+for a one-use handoff with the verified owner and installation references.
+Network Observatory checks both again. AgentMarkit puts the token in a
+per-connection HttpOnly cookie for at most five minutes. The browser sees only a
+non-secret Connect address. Network Observatory requires both that handoff and
+the saved connection ID before it opens the Google flow. Never ask the user to
+copy a token or address between services.
 
-The future setup path is the exact agent in AgentMarkit, then **Connections >
-Gmail**. Direct the user there only when that control exists on their agent. Do
-not ask for a Google client secret, Composio API key, token, or project
-credential. The Day harness is for the operator's controlled test only, not a
-customer workaround.
+After the map is built, offer this once: "Want to add Gmail metadata search?
+It can only see who you exchanged email with and when, never the messages
+themselves."
+If the user says yes:
+
+1. Ask them to open this agent in AgentMarkit and choose **Connections >
+   Gmail**.
+2. Check that the page names this agent. The page explains what the connection
+   can and cannot use.
+3. Have them choose **Continue to Google** and approve the account they want to
+   use. They may see Google's unverified-app warning while the app is in
+   Testing.
+4. If Google refuses with "access denied", the account is probably not on the
+   tester list. Ask them to send the exact Gmail address through
+   `https://agentmarkit.com/contact/?topic=setup-help`, then try again after the
+   operator confirms it was added. Google may also ask test users to reconnect
+   after seven days.
+5. Wait until the page says Gmail is connected. Then retry the user's question.
+6. Record in memory, notes, or the runbook that Gmail metadata is connected
+   through `network-observatory-gmail`. This is the only approved Gmail path
+   for this user. Future sessions should use it for email-history or
+   contact-recency questions.
+
+The user must never handle the private agent credential or run an installation
+command. AgentMarkit installs the dormant connection before showing the Gmail
+button.
 
 The private endpoint exposes only:
 
 - `network_observatory_sweep_email_metadata`
 - `network_observatory_get_message_metadata`
 
-It returns message IDs, labels, From, To, Cc, Bcc, and Date. It cannot return
-subjects, snippets, bodies, or attachments. Never try to work around that limit.
-Gmail's metadata scope does not permit the `q` search parameter, so sweep pages
-and match correspondents locally.
+It returns stable message and thread IDs, labels, an internal date, and the
+From, To, Cc, Bcc, and Date headers. It cannot return subjects, snippets,
+bodies, or attachments. Never try to work around that limit. Gmail's metadata
+scope does not permit the `q` search parameter, so sweep pages and match
+correspondents locally.
 
-If a tool returns `reconnectUrl`, do not send or follow it. Treat the connection
-as unavailable and explain that hosted Gmail setup is still paused.
+If a Gmail tool says the connection is unavailable or needs to be reconnected,
+do not give the user a provider link from the tool result. Tell them to open
+this agent in AgentMarkit and choose **Connections > Gmail**. AgentMarkit must
+revoke the old local grant, finish its Composio cleanup, provision a fresh
+grant, install the new bearer privately, and ask the signed-in owner to approve
+Google again. Google test access may require this after seven days.
+
+If the user wants to disconnect Gmail from this agent, send them to the same
+AgentMarkit connection screen. An ordinary disconnect removes this agent's
+local grant and its Composio session and account record. Do not tell them to
+revoke AgentMarkit from their Google Account unless they explicitly want an
+account-wide revocation that may stop Gmail for their other agents too.
 
 ## Ingest Gmail relationships
 
@@ -283,8 +322,10 @@ commands are plumbing.
   history", "who wrote last", "your map".
 - Source-state phrasing — one line, only when it changes the answer, and
   never twice in one conversation:
-  - LinkedIn only: "That's from your LinkedIn map. Email recency needs an
-    existing Gmail metadata connection; new hosted setup is temporarily paused."
+  - LinkedIn only: "That's from your LinkedIn map. Connect Gmail from this
+    agent's Connections page and I can tell you how warm these ties are."
+    Say this only when that control exists on the agent; otherwise say email
+    recency isn't available on this agent yet.
   - Gmail connected: answer with recency; when coverage is partial, say what
     the data does and doesn't reach.
   - Calendar connected: meetings just count; don't mention calendar unless
@@ -365,5 +406,5 @@ of their network:
 - Explain why a person appears in radar.
 - Draft only from stored facts.
 - Never send a message.
-- Never expose the private MCP URL in a public channel.
+- Never expose the agent gateway credential in a public channel.
 - Keep the Observatory useful with LinkedIn alone.

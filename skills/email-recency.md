@@ -5,15 +5,26 @@ contact date, who wrote last, and a temperature label (active, warm, cooling,
 cold). Feed it one contact, a list, or every LinkedIn connection in your
 network database that shared an email address.
 
-This is the one piece of network-observatory that holds a credential, so the
-deal is spelled out here. Trellis and the map never touch the network; this
-script talks to Google directly, using the most limited Gmail access that
-exists (`gmail.metadata`). Under that permission Google's own servers return
-message headers only — From, To, Cc, Date — and refuse to return bodies or
-attachments no matter what the software asks for. The restriction is
-enforced by Google, not promised by this code. Your token stays in
-`data/gmail_token.json` on your machine and you can kill it any time at
-myaccount.google.com/permissions.
+## Choose the right Gmail path first
+
+- **Hosted agent (Hermes or Agent37):** do not run the local OAuth script and
+  do not ask for a client JSON, Google secret, or Composio key. Use this exact
+  agent's `network-observatory-gmail` tools when they are configured. If setup
+  is needed, use its **Connections > Gmail** control in AgentMarkit when that
+  control exists. If it is absent, say setup is unavailable for this agent.
+  Never substitute a generic Connect page, an old Worker link, a manual
+  command, or a broad Gmail or Composio connection.
+- **Agent on the user's own computer:** use the local script below. Its token
+  stays in `data/gmail_token.json` and can be revoked at
+  myaccount.google.com/permissions.
+
+For local use, this is the one piece of network-observatory that holds a
+credential, so the deal is spelled out here. Trellis and the map never touch
+the network; this script talks to Google directly, using the most limited Gmail
+access that exists (`gmail.metadata`). Under that permission Google's own
+servers return message headers only — From, To, Cc, Date — and refuse to return
+bodies or attachments no matter what the software asks for. The restriction is
+enforced by Google, not promised by this code.
 
 ## What you can do
 
@@ -58,19 +69,18 @@ for making your own).
 
 ## On hosted agents (Hermes): use an existing connection only
 
-`email_recency.py` is still for agents running on the user's own computer. If
-you are a hosted agent (Hermes, Agent37), do not set up local OAuth and do not
-ask the user for a client JSON, Google secret, or Composio key.
+After the agent-specific metadata tools are connected, use them instead of
+`email_recency.py`. The hosted service keeps connector credentials away from
+the agent and exposes only the two metadata tools used below.
 
-New hosted Gmail setup is temporarily unavailable, apart from the
-operator-controlled Day test harness. If this exact agent already has a working
-`network-observatory-gmail` connection, it may keep using it. If not, stop. Do
-not use the retired Connect page, ask for a private manual setup command, open a
-default Composio or Gmail connection, or send a provider reconnect link. Do not
-re-provision a disconnected legacy connection.
+If this exact agent already has a working `network-observatory-gmail`
+connection, use it. If not, setup starts from the exact agent in AgentMarkit,
+then **Connections > Gmail**, only when that control exists; otherwise say
+Gmail is not available on this agent yet. Do not use the retired Connect page,
+ask for a private manual setup command, open a default Composio or Gmail
+connection, send a provider reconnect link, or re-provision a legacy connection.
 
-Future setup starts from the exact agent in AgentMarkit, then **Connections >
-Gmail**, only when that control exists. For an existing working connection:
+For a working connection:
 
 1. Call `network_observatory_sweep_email_metadata`, 25 messages at a time.
    Follow `nextPageToken` only as far as the user's question needs. Gmail's
@@ -95,8 +105,11 @@ is safe: already-seen events are skipped. After ingest, `trellis.py recall`,
 script would have produced. Store who and when, not what was said.
 
 The hosted tools cannot return subject, snippet, body, or attachments. If a
-call returns `reconnectUrl`, do not send or follow it. Treat the connection as
-unavailable and tell the user hosted Gmail setup is paused.
+tool says Gmail needs to be reconnected, tell the user to open this agent in
+AgentMarkit and choose **Connections > Gmail**. AgentMarkit must remove the old
+grant, finish its Composio cleanup, provision a fresh grant, and ask the
+signed-in owner to approve Google again. While the Google OAuth app remains in
+Testing, this may be needed again after seven days.
 
 ## Design credit
 

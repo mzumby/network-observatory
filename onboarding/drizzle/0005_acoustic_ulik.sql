@@ -1,0 +1,1 @@
+ALTER TABLE `agent_connections` ADD `connected_account_revoked_at` text;

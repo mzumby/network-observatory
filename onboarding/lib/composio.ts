@@ -1,4 +1,7 @@
+import { sanitizeGmailMessage } from "./gmail-metadata.mjs";
+
 const COMPOSIO_API = "https://backend.composio.dev/api/v3.1";
+const COMPOSIO_TIMEOUT_MS = 20_000;
 
 interface SessionResponse {
   session_id: string;
@@ -18,6 +21,75 @@ interface ProxyResponse {
   status: number;
 }
 
+export class GmailProxyError extends Error {
+  public readonly status: number;
+
+  constructor(status: number) {
+    super(`Gmail returned ${status}.`);
+    this.name = "GmailProxyError";
+    this.status = status;
+  }
+}
+
+interface ToolkitStatusResponse {
+  items?: Array<{
+    slug?: string;
+    connected_account?: {
+      id?: string;
+      status?: string;
+    } | null;
+  }>;
+}
+
+interface CompleteAuthResponse {
+  connected_account_id: string;
+  toolkit_slug: string;
+}
+
+interface ConnectedAccountsResponse {
+  items?: Array<{
+    id?: string;
+    user_id?: string;
+    status?: string;
+    toolkit?: { slug?: string };
+    auth_config?: { id?: string };
+  }>;
+}
+
+interface SessionConfigResponse {
+  session_id: string;
+  config?: {
+    connected_accounts?: Record<string, Array<string | null>> | null;
+  };
+}
+
+interface AuthConfigResponse {
+  id?: string;
+  type?: string;
+  toolkit?: { slug?: string };
+  auth_scheme?: string | null;
+  is_composio_managed?: boolean | null;
+  status?: string;
+  credentials?: Record<string, unknown> | null;
+  scopes?: unknown;
+  is_enabled_for_tool_router?: boolean;
+}
+
+export const GMAIL_METADATA_SCOPE =
+  "https://www.googleapis.com/auth/gmail.metadata";
+
+export type GmailAuthConfigCheck = {
+  verified: boolean;
+  checks: {
+    exists: boolean;
+    custom: boolean;
+    gmail: boolean;
+    oauth2: boolean;
+    enabled: boolean;
+    metadataOnly: boolean;
+  };
+};
+
 async function composioRequest<T>(
   apiKey: string,
   path: string,
@@ -25,6 +97,7 @@ async function composioRequest<T>(
 ): Promise<T> {
   const response = await fetch(`${COMPOSIO_API}${path}`, {
     ...init,
+    signal: init.signal || AbortSignal.timeout(COMPOSIO_TIMEOUT_MS),
     headers: {
       "content-type": "application/json",
       "x-api-key": apiKey,
@@ -110,28 +183,163 @@ export async function createGmailSession(
     },
   );
 
-  const connectUrl = await createGmailLink(
-    apiKey,
-    session.session_id,
-    callbackUrl,
-  );
+  return session.session_id;
+}
 
+export async function completeGmailAuth(
+  apiKey: string,
+  sessionUri: string,
+  userId: string,
+) {
+  return composioRequest<CompleteAuthResponse>(
+    apiKey,
+    "/connected_accounts/complete_auth",
+    {
+      method: "POST",
+      body: JSON.stringify({ session_uri: sessionUri, user_id: userId }),
+    },
+  );
+}
+
+export async function pinGmailConnectedAccount(
+  apiKey: string,
+  sessionId: string,
+  connectedAccountId: string,
+) {
+  const session = await composioRequest<SessionConfigResponse>(
+    apiKey,
+    `/tool_router/session/${encodeURIComponent(sessionId)}`,
+    {
+      method: "PATCH",
+      body: JSON.stringify({
+        connected_accounts: { gmail: [connectedAccountId] },
+      }),
+    },
+  );
+  const pinned = session.config?.connected_accounts?.gmail;
+  if (
+    session.session_id !== sessionId ||
+    !Array.isArray(pinned) ||
+    pinned.length !== 1 ||
+    pinned[0] !== connectedAccountId
+  ) {
+    throw new Error("Composio did not pin the verified Gmail account.");
+  }
+}
+
+function scopeList(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value.filter((item): item is string => typeof item === "string");
+  }
+  if (typeof value === "string") {
+    return value.split(/[\s,]+/).filter(Boolean);
+  }
+  return [];
+}
+
+export async function inspectGmailAuthConfig(
+  apiKey: string,
+  authConfigId: string,
+): Promise<GmailAuthConfigCheck> {
+  const config = await composioRequest<AuthConfigResponse>(
+    apiKey,
+    `/auth_configs/${encodeURIComponent(authConfigId)}`,
+  );
+  const credentials = config.credentials || {};
+  const scopes = [
+    ...scopeList(config.scopes),
+    ...scopeList(credentials.scopes),
+    ...scopeList(credentials.scope),
+  ];
+  const mailboxScopes = [...new Set(scopes)].filter(
+    (scope) =>
+      scope.includes("googleapis.com/auth/gmail.") ||
+      scope.replace(/\/+$/, "") === "https://mail.google.com",
+  );
+  const checks = {
+    exists: config.id === authConfigId,
+    custom:
+      config.type?.toLowerCase() === "custom" &&
+      config.is_composio_managed === false,
+    gmail: config.toolkit?.slug?.toLowerCase() === "gmail",
+    oauth2: config.auth_scheme?.toUpperCase() === "OAUTH2",
+    enabled:
+      config.status?.toUpperCase() === "ENABLED" &&
+      config.is_enabled_for_tool_router !== false,
+    metadataOnly:
+      mailboxScopes.length === 1 && mailboxScopes[0] === GMAIL_METADATA_SCOPE,
+  };
   return {
-    sessionId: session.session_id,
-    connectUrl,
+    verified: Object.values(checks).every(Boolean),
+    checks,
   };
 }
 
 export async function deleteSession(apiKey: string, sessionId: string) {
-  try {
-    await composioRequest<Record<string, unknown>>(
-      apiKey,
-      `/tool_router/session/${encodeURIComponent(sessionId)}`,
-      { method: "DELETE" },
-    );
-  } catch {
-    // Deletion is best effort during rollback or revocation.
-  }
+  const response = await fetch(
+    `${COMPOSIO_API}/tool_router/session/${encodeURIComponent(sessionId)}`,
+    {
+      method: "DELETE",
+      headers: { "x-api-key": apiKey },
+      signal: AbortSignal.timeout(COMPOSIO_TIMEOUT_MS),
+    },
+  );
+  return response.ok || response.status === 404;
+}
+
+export async function getGmailConnectionStatus(apiKey: string, sessionId: string) {
+  const toolkits = await composioRequest<ToolkitStatusResponse>(
+    apiKey,
+    `/tool_router/session/${encodeURIComponent(sessionId)}/toolkits`,
+  );
+  const gmail = toolkits.items?.find(
+    (item) => item.slug?.toLowerCase() === "gmail",
+  );
+  return {
+    active: gmail?.connected_account?.status?.toUpperCase() === "ACTIVE",
+    connectedAccountId: gmail?.connected_account?.id || null,
+  };
+}
+
+export async function findGmailConnectedAccount(
+  apiKey: string,
+  userId: string,
+  authConfigId: string,
+) {
+  const query = new URLSearchParams({ limit: "10" });
+  query.append("toolkit_slugs", "gmail");
+  query.append("user_ids", userId);
+  query.append("auth_config_ids", authConfigId);
+  const result = await composioRequest<ConnectedAccountsResponse>(
+    apiKey,
+    `/connected_accounts?${query.toString()}`,
+  );
+  const accounts = (result.items || []).filter(
+    (item) =>
+      item.id?.startsWith("ca_") &&
+      item.user_id === userId &&
+      item.toolkit?.slug?.toLowerCase() === "gmail" &&
+      item.auth_config?.id === authConfigId,
+  );
+  const active = accounts.find(
+    (item) => item.status?.toUpperCase() === "ACTIVE",
+  );
+  return active?.id || accounts[0]?.id || null;
+}
+
+export async function deleteConnectedAccount(
+  apiKey: string,
+  connectedAccountId: string,
+) {
+  const response = await fetch(
+    `${COMPOSIO_API}/connected_accounts/${encodeURIComponent(connectedAccountId)}`,
+    {
+      method: "DELETE",
+      headers: { "x-api-key": apiKey },
+      signal: AbortSignal.timeout(COMPOSIO_TIMEOUT_MS),
+    },
+  );
+  return response.ok || response.status === 404;
 }
 
 async function gmailProxy(
@@ -151,6 +359,17 @@ async function gmailProxy(
       }),
     },
   );
+  if (
+    typeof response.status !== "number" ||
+    !Number.isInteger(response.status) ||
+    response.status < 100 ||
+    response.status > 599
+  ) {
+    throw new Error("Composio returned an invalid Gmail status.");
+  }
+  if (response.status < 200 || response.status >= 300) {
+    throw new GmailProxyError(response.status);
+  }
   return response.data;
 }
 
@@ -158,33 +377,6 @@ function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === "object"
     ? (value as Record<string, unknown>)
     : {};
-}
-
-function sanitizeMessage(value: unknown) {
-  const message = asRecord(value);
-  const payload = asRecord(message.payload);
-  const headers = Array.isArray(payload.headers) ? payload.headers : [];
-  const allowed = new Set(["from", "to", "cc", "bcc", "date"]);
-  const cleanHeaders: Record<string, string> = {};
-
-  for (const header of headers) {
-    const item = asRecord(header);
-    const name = typeof item.name === "string" ? item.name.toLowerCase() : "";
-    if (allowed.has(name) && typeof item.value === "string") {
-      cleanHeaders[name] = item.value;
-    }
-  }
-
-  return {
-    id: typeof message.id === "string" ? message.id : "",
-    threadId: typeof message.threadId === "string" ? message.threadId : "",
-    labelIds: Array.isArray(message.labelIds)
-      ? message.labelIds.filter((item): item is string => typeof item === "string")
-      : [],
-    internalDate:
-      typeof message.internalDate === "string" ? message.internalDate : "",
-    headers: cleanHeaders,
-  };
 }
 
 export async function getGmailMessageMetadata(
@@ -199,7 +391,7 @@ export async function getGmailMessageMetadata(
   const endpoint =
     `https://gmail.googleapis.com/gmail/v1/users/me/messages/` +
     `${encodeURIComponent(messageId)}?${query.toString()}`;
-  return sanitizeMessage(await gmailProxy(apiKey, sessionId, endpoint));
+  return sanitizeGmailMessage(await gmailProxy(apiKey, sessionId, endpoint));
 }
 
 export async function sweepGmailMetadata(
@@ -212,8 +404,9 @@ export async function sweepGmailMetadata(
     includeSpamTrash?: boolean;
   },
 ) {
+  const requestedCount = Math.min(Math.max(options.maxResults, 1), 25);
   const query = new URLSearchParams({
-    maxResults: String(Math.min(Math.max(options.maxResults, 1), 25)),
+    maxResults: String(requestedCount),
     includeSpamTrash: options.includeSpamTrash ? "true" : "false",
   });
   if (options.pageToken) query.set("pageToken", options.pageToken);
@@ -223,18 +416,37 @@ export async function sweepGmailMetadata(
     `https://gmail.googleapis.com/gmail/v1/users/me/messages?${query.toString()}`;
   const list = asRecord(await gmailProxy(apiKey, sessionId, endpoint));
   const messages = Array.isArray(list.messages) ? list.messages : [];
-  const ids = messages
-    .map((item) => asRecord(item).id)
-    .filter((item): item is string => typeof item === "string");
+  const ids = [
+    ...new Set(
+      messages
+        .map((item) => asRecord(item).id)
+        .filter((item): item is string => typeof item === "string"),
+    ),
+  ].slice(0, requestedCount);
 
-  const metadata = await Promise.all(
-    ids.map((id) => getGmailMessageMetadata(apiKey, sessionId, id)),
-  );
+  const metadata = [];
+  for (let index = 0; index < ids.length; index += 5) {
+    const chunk = await Promise.all(
+      ids.slice(index, index + 5).map(async (id) => {
+        try {
+          return await getGmailMessageMetadata(apiKey, sessionId, id);
+        } catch (cause) {
+          if (cause instanceof GmailProxyError && cause.status === 404) {
+            return null;
+          }
+          throw cause;
+        }
+      }),
+    );
+    metadata.push(
+      ...chunk.filter((message): message is NonNullable<typeof message> =>
+        Boolean(message),
+      ),
+    );
+  }
   return {
     messages: metadata,
     nextPageToken:
       typeof list.nextPageToken === "string" ? list.nextPageToken : null,
-    resultSizeEstimate:
-      typeof list.resultSizeEstimate === "number" ? list.resultSizeEstimate : null,
   };
 }

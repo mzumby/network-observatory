@@ -32,7 +32,5 @@ jobs:
         run: npm test
       - name: Audit production dependencies
         run: npm audit --omit=dev
-      # Main has six inherited lint errors; draft PR #2 removes them.
-      - name: Lint (temporary non-blocking until PR #2)
-        continue-on-error: true
+      - name: Lint
         run: npm run lint
