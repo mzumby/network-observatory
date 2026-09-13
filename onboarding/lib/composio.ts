@@ -317,6 +317,30 @@ export async function getGmailConnectionStatus(apiKey: string, sessionId: string
   };
 }
 
+// One real metadata request, the same shape the tools make. Reports rather than
+// throws, because a preflight wants the reason more than it wants an exception.
+export async function probeGmailMetadata(apiKey: string, sessionId: string) {
+  try {
+    await gmailProxy(
+      apiKey,
+      sessionId,
+      "https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=1&includeSpamTrash=false",
+    );
+    return { ok: true, status: 200, reason: "" };
+  } catch (cause) {
+    return {
+      ok: false,
+      status: cause instanceof GmailProxyError ? cause.status : null,
+      reason:
+        cause instanceof GmailProxyError && cause.detail
+          ? cause.detail
+          : cause instanceof Error
+          ? cause.message.slice(0, 200)
+          : "unknown error",
+    };
+  }
+}
+
 export async function findGmailConnectedAccount(
   apiKey: string,
   userId: string,

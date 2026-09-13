@@ -272,11 +272,18 @@ test("health is local-only and the protected preflight verifies permissions", as
   assert.match(preflight, /!releasePreflightToken/);
   assert.doesNotMatch(preflight, /INVITE_ADMIN_TOKEN/);
   assert.match(preflight, /inspectGmailAuthConfig/);
-  assert.match(preflight, /authConfig\.verified \? 200 : 503/);
+  // The preflight must gate on a real Gmail call, not only on the auth config:
+  // a disabled Gmail API passes every paperwork check and refuses every request.
+  assert.match(preflight, /ok \? 200 : 503/);
+  assert.match(preflight, /const ok = authConfig\.verified && live\.ok !== false/);
+  assert.match(preflight, /probeGmailMetadata/);
+  assert.match(preflight, /liveGmailCall/);
+  assert.match(composio, /users\/me\/messages\?maxResults=1/);
   assert.match(
     preflight,
     /connectionApiContract:\s*"agentmarkit-agent-bound-gmail-metadata\/v1"/,
   );
+  assert.doesNotMatch(preflight, /connectionId:/);
   assert.match(preflight, /requiredCallbackVerifier/);
   assert.match(preflight, /Settings > General > Configuration/);
   assert.match(runtime, /RELEASE_PREFLIGHT_TOKEN\?: string/);
