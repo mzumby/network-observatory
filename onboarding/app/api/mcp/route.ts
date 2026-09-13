@@ -232,9 +232,22 @@ async function handleRpc(
 
     return rpcError(rpc.id, -32602, "Unknown tool");
   } catch (cause) {
+    // A swallowed reason here costs a whole debugging cycle: the agent only ever
+    // says "reconnect", which is wrong advice for a scope or quota refusal.
+    console.error("Gmail metadata call failed", {
+      status: cause instanceof GmailProxyError ? cause.status : null,
+      detail: cause instanceof GmailProxyError ? cause.detail : null,
+      message: cause instanceof Error ? cause.message.slice(0, 200) : "unknown error",
+    });
     try {
-      if (cause instanceof GmailProxyError && [401, 403].includes(cause.status)) {
+      // 401 is an expired or revoked grant, which reconnecting fixes. A 403 is
+      // Google refusing the request itself, which it does not.
+      if (cause instanceof GmailProxyError && cause.status === 401) {
         await markAgentConnectionNeedsReconnect(connectionId);
+      } else if (cause instanceof GmailProxyError && cause.status === 403) {
+        // Leave the grant alone unless Composio agrees the account is gone.
+        const status = await getGmailConnectionStatus(runtime.COMPOSIO_API_KEY, sessionId);
+        if (!status.active) await markAgentConnectionNeedsReconnect(connectionId);
       } else {
         const status = await getGmailConnectionStatus(
           runtime.COMPOSIO_API_KEY,

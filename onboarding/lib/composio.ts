@@ -23,12 +23,28 @@ interface ProxyResponse {
 
 export class GmailProxyError extends Error {
   public readonly status: number;
+  // Google explains a refusal in the body. Without it a scope problem and an
+  // expired grant look identical, and only one of them is fixed by reconnecting.
+  public readonly detail: string;
 
-  constructor(status: number) {
-    super(`Gmail returned ${status}.`);
+  constructor(status: number, detail = "") {
+    super(`Gmail returned ${status}.${detail ? ` ${detail}` : ""}`);
     this.name = "GmailProxyError";
     this.status = status;
+    this.detail = detail;
   }
+}
+
+// Never let a token or an address reach a log line.
+export function gmailFailureDetail(data: unknown) {
+  const error = asRecord(asRecord(data).error);
+  const reason = Array.isArray(error.errors) ? asRecord(error.errors[0]).reason : undefined;
+  const message = typeof error.message === "string" ? error.message : "";
+  return [typeof reason === "string" ? reason : "", message]
+    .filter(Boolean)
+    .join(": ")
+    .replace(/[\w.+-]+@[\w.-]+/g, "[address]")
+    .slice(0, 300);
 }
 
 interface ToolkitStatusResponse {
@@ -368,7 +384,7 @@ async function gmailProxy(
     throw new Error("Composio returned an invalid Gmail status.");
   }
   if (response.status < 200 || response.status >= 300) {
-    throw new GmailProxyError(response.status);
+    throw new GmailProxyError(response.status, gmailFailureDetail(response.data));
   }
   return response.data;
 }
