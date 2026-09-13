@@ -48,10 +48,18 @@ export async function GET() {
   const script = `
     (() => {
       const fail = () => location.replace('/?problem=identity-check');
-      const sessionUri = new URLSearchParams(location.search).get('session_uri');
+      const query = new URLSearchParams(location.search);
+      // Composio has returned the browser here two ways: an older callback that
+      // carries session_uri for us to complete, and a newer one that completes
+      // the authorization itself and reports connected_account_id plus status.
+      // Either is only a signal that the round trip happened. The server never
+      // trusts these values as identity; it re-reads the account from Composio.
+      const sessionUri = query.get('session_uri');
+      const callbackStatus = query.get('status');
+      const returned = Boolean(sessionUri) || query.has('connected_account_id');
       const tabToken = sessionStorage.getItem('agentmarkit_gmail_flow');
       const connectionId = sessionStorage.getItem('agentmarkit_gmail_connection_id');
-      if (!sessionUri || !tabToken || !connectionId) return fail();
+      if (!returned || !tabToken || !connectionId) return fail();
       fetch('/api/connections/verify', {
         method: 'POST',
         headers: {
@@ -59,7 +67,7 @@ export async function GET() {
           'x-agentmarkit-flow': tabToken,
           'x-agentmarkit-connection': connectionId,
         },
-        body: JSON.stringify({ sessionUri }),
+        body: JSON.stringify({ sessionUri, callbackStatus }),
       })
         .then((response) => response.json())
         .then((result) => {
@@ -88,15 +96,20 @@ export async function GET() {
 export async function POST(request: Request) {
   const runtime = requireRuntimeConfig();
   const body = (await request.json().catch(() => null)) as
-    | { sessionUri?: unknown }
+    | { sessionUri?: unknown; callbackStatus?: unknown }
     | null;
   const sessionUri =
     typeof body?.sessionUri === "string" ? body.sessionUri.trim() : "";
+  const callbackStatus =
+    typeof body?.callbackStatus === "string" ? body.callbackStatus.trim().toLowerCase() : "";
+  // A callback that names its own failure is never treated as a success.
+  if (callbackStatus && !["success", "active", "connected"].includes(callbackStatus)) {
+    return reply(request, "verification-failed");
+  }
   const connectionId = connectionIdFromRequest(request);
   const browserToken = browserTokenFromRequest(request, connectionId);
   const browserTabToken = browserTabTokenFromRequest(request);
   if (
-    !sessionUri ||
     sessionUri.length > 2048 ||
     !browserToken.startsWith("flow_") ||
     browserToken.length > 128 ||
@@ -169,6 +182,10 @@ export async function POST(request: Request) {
       return reply(request, "verification-failed");
     }
     authCompletionAttempted = true;
+    // When Composio completed the authorization on its side there is no
+    // session_uri to exchange. Fall through to the session lookup below, which
+    // asks Composio about our own session rather than trusting the callback.
+    if (!sessionUri) throw new Error("Composio completed this authorization itself.");
     const result = await completeGmailAuth(
       runtime.COMPOSIO_API_KEY,
       sessionUri,
