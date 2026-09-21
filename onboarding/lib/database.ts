@@ -438,7 +438,8 @@ export async function getLiveGmailSession() {
   return await runtimeEnv()
     .DB.prepare(
       `SELECT session_id FROM agent_connections
-       WHERE authorized_at IS NOT NULL AND revoked_at IS NULL AND session_id IS NOT NULL
+       WHERE authorized_at IS NOT NULL AND revoked_at IS NULL
+         AND needs_reconnect_at IS NULL AND session_id IS NOT NULL
        ORDER BY authorized_at DESC LIMIT 1`,
     )
     .first<{ session_id: string }>();

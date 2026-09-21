@@ -247,6 +247,7 @@ test("health is local-only and the protected preflight verifies permissions", as
     composio,
     authorize,
     runtime,
+    database,
     wrangler,
     accessAdmin,
     connectionAdmin,
@@ -256,6 +257,7 @@ test("health is local-only and the protected preflight verifies permissions", as
     read("../lib/composio.ts"),
     read("../app/api/connections/authorize/route.ts"),
     read("../lib/runtime.ts"),
+    read("../lib/database.ts"),
     read("../wrangler.jsonc"),
     read("../app/api/admin/access/route.ts"),
     read("../app/api/admin/agent-connections/route.ts"),
@@ -278,6 +280,8 @@ test("health is local-only and the protected preflight verifies permissions", as
   assert.match(preflight, /const ok = authConfig\.verified && live\.ok !== false/);
   assert.match(preflight, /probeGmailMetadata/);
   assert.match(preflight, /liveGmailCall/);
+  assert.doesNotMatch(preflight, /getLiveGmailSession\(\)\.catch/);
+  assert.match(database, /needs_reconnect_at IS NULL/);
   assert.match(composio, /users\/me\/messages\?maxResults=1/);
   assert.match(
     preflight,
