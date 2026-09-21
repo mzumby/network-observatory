@@ -1,0 +1,9 @@
+name = "network-observatory-connect"
+main = "src/index.js"
+compatibility_date = "2026-09-20"
+account_id = "1e8cfc7ef84fbb46a6efa51fe89822e8"
+workers_dev = true
+send_metrics = false
+
+[observability]
+enabled = false
