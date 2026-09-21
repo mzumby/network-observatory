@@ -13,7 +13,12 @@ export async function GET(request: Request) {
   const supplied = authorization.startsWith("Bearer ")
     ? authorization.slice("Bearer ".length)
     : "";
-  if (!supplied || !(await secretMatches(supplied, runtime.INVITE_ADMIN_TOKEN))) {
+  const releasePreflightToken = runtime.RELEASE_PREFLIGHT_TOKEN?.trim() || "";
+  if (
+    !releasePreflightToken ||
+    !supplied ||
+    !(await secretMatches(supplied, releasePreflightToken))
+  ) {
     return Response.json(
       { error: "Unauthorized" },
       { status: 401, headers: { "cache-control": "no-store" } },
@@ -28,6 +33,7 @@ export async function GET(request: Request) {
     return Response.json(
       {
         ok: authConfig.verified,
+        connectionApiContract: "agentmarkit-agent-bound-gmail-metadata/v1",
         authConfigId: runtime.COMPOSIO_GMAIL_AUTH_CONFIG_ID,
         expectedGmailScope: GMAIL_METADATA_SCOPE,
         requiredCallbackVerifier: `${new URL(request.url).origin}/api/connections/verify`,

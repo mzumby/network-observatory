@@ -5,6 +5,7 @@ export interface RuntimeEnv {
   COMPOSIO_API_KEY?: string;
   COMPOSIO_GMAIL_AUTH_CONFIG_ID?: string;
   INVITE_ADMIN_TOKEN?: string;
+  RELEASE_PREFLIGHT_TOKEN?: string;
   IDENTITY_PEPPER?: string;
 }
 
