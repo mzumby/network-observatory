@@ -241,11 +241,24 @@ test("a dormant agent connection lists the same two safe tools", async () => {
 });
 
 test("health is local-only and the protected preflight verifies permissions", async () => {
-  const [health, preflight, composio, authorize] = await Promise.all([
+  const [
+    health,
+    preflight,
+    composio,
+    authorize,
+    runtime,
+    wrangler,
+    accessAdmin,
+    connectionAdmin,
+  ] = await Promise.all([
     read("../app/api/health/route.ts"),
     read("../app/api/admin/preflight/route.ts"),
     read("../lib/composio.ts"),
     read("../app/api/connections/authorize/route.ts"),
+    read("../lib/runtime.ts"),
+    read("../wrangler.jsonc"),
+    read("../app/api/admin/access/route.ts"),
+    read("../app/api/admin/agent-connections/route.ts"),
   ]);
 
   assert.match(health, /mode:\s*"agentmarkit-browser-handoff"/);
@@ -255,10 +268,39 @@ test("health is local-only and the protected preflight verifies permissions", as
   assert.match(health, /COMPOSIO_GMAIL_AUTH_CONFIG_ID/);
   assert.doesNotMatch(health, /apiKey:\s*|adminToken:\s*|pepper:\s*/i);
   assert.match(preflight, /secretMatches/);
+  assert.match(preflight, /runtime\.RELEASE_PREFLIGHT_TOKEN/);
+  assert.match(preflight, /!releasePreflightToken/);
+  assert.doesNotMatch(preflight, /INVITE_ADMIN_TOKEN/);
   assert.match(preflight, /inspectGmailAuthConfig/);
-  assert.match(preflight, /authConfig\.verified \? 200 : 503/);
+  // The preflight must gate on a real Gmail call, not only on the auth config:
+  // a disabled Gmail API passes every paperwork check and refuses every request.
+  assert.match(preflight, /ok \? 200 : 503/);
+  assert.match(preflight, /const ok = authConfig\.verified && live\.ok !== false/);
+  assert.match(preflight, /probeGmailMetadata/);
+  assert.match(preflight, /liveGmailCall/);
+  assert.match(composio, /users\/me\/messages\?maxResults=1/);
+  assert.match(
+    preflight,
+    /connectionApiContract:\s*"agentmarkit-agent-bound-gmail-metadata\/v1"/,
+  );
+  assert.doesNotMatch(preflight, /connectionId:/);
   assert.match(preflight, /requiredCallbackVerifier/);
   assert.match(preflight, /Settings > General > Configuration/);
+  assert.match(runtime, /RELEASE_PREFLIGHT_TOKEN\?: string/);
+  const requiredRuntimeConfig = runtime.slice(
+    runtime.indexOf("const missing = ["),
+    runtime.indexOf("].filter", runtime.indexOf("const missing = [")),
+  );
+  assert.doesNotMatch(requiredRuntimeConfig, /RELEASE_PREFLIGHT_TOKEN/);
+  const requiredSecrets = wrangler.slice(
+    wrangler.indexOf('"required": ['),
+    wrangler.indexOf("]", wrangler.indexOf('"required": [')),
+  );
+  assert.match(requiredSecrets, /"RELEASE_PREFLIGHT_TOKEN"/);
+  for (const highPrivilegeRoute of [accessAdmin, connectionAdmin]) {
+    assert.match(highPrivilegeRoute, /runtime\.INVITE_ADMIN_TOKEN/);
+    assert.doesNotMatch(highPrivilegeRoute, /RELEASE_PREFLIGHT_TOKEN/);
+  }
   assert.match(authorize, /\/api\/connections\/verify/);
   assert.doesNotMatch(authorize, /origin\}\/connected/);
   assert.match(composio, /https:\/\/mail\.google\.com/);

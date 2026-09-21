@@ -14,6 +14,12 @@ import {
 } from "@/lib/database";
 import { requireRuntimeConfig } from "@/lib/runtime";
 
+// Google says the API itself is off or not configured, rather than the grant
+// being bad. Matched on Google's own reason strings, which travel in the body.
+function isServiceRefusal(detail: string) {
+  return /accessNotConfigured|SERVICE_DISABLED|has not been used in project|is disabled/i.test(detail || "");
+}
+
 export const dynamic = "force-dynamic";
 
 type JsonRpcRequest = {
@@ -232,10 +238,25 @@ async function handleRpc(
 
     return rpcError(rpc.id, -32602, "Unknown tool");
   } catch (cause) {
+    // A swallowed reason here costs a whole debugging cycle: the agent only ever
+    // says "reconnect", which is wrong advice for a scope or quota refusal.
+    console.error("Gmail metadata call failed", {
+      status: cause instanceof GmailProxyError ? cause.status : null,
+      detail: cause instanceof GmailProxyError ? cause.detail : null,
+      message: cause instanceof Error ? cause.message.slice(0, 200) : "unknown error",
+    });
+    // Google refuses a disabled or unconfigured API with a 403 that no amount of
+    // reconnecting will change. Telling the person to reconnect sends them in a
+    // loop, so that refusal gets its own answer and leaves the grant alone.
+    const unusableService =
+      cause instanceof GmailProxyError && cause.status === 403 && isServiceRefusal(cause.detail);
     try {
-      if (cause instanceof GmailProxyError && [401, 403].includes(cause.status)) {
+      // 401 is an expired or revoked grant, which reconnecting fixes. A 403 is
+      // Google refusing the request itself, which it does not.
+      if (cause instanceof GmailProxyError && cause.status === 401) {
         await markAgentConnectionNeedsReconnect(connectionId);
-      } else {
+      } else if (!unusableService) {
+        // Leave the grant alone unless Composio agrees the account is gone.
         const status = await getGmailConnectionStatus(
           runtime.COMPOSIO_API_KEY,
           sessionId,
@@ -250,11 +271,18 @@ async function handleRpc(
     return rpcResult(
       rpc.id,
       textResult(
-        {
-          error: "Gmail metadata access is unavailable.",
-          action:
-            "Open this agent in AgentMarkit and check Gmail under Connections. If it still shows connected, ask the operator to check the connection.",
-        },
+        unusableService
+          ? {
+              error: "Gmail metadata is switched off for this connection, not disconnected.",
+              action:
+                "Reconnecting will not help. Ask the operator to check the Gmail API is enabled for the Google project behind this connection.",
+              reason: cause instanceof GmailProxyError ? cause.detail : "",
+            }
+          : {
+              error: "Gmail metadata access is unavailable.",
+              action:
+                "Open this agent in AgentMarkit and check Gmail under Connections. If it still shows connected, ask the operator to check the connection.",
+            },
         true,
       ),
     );

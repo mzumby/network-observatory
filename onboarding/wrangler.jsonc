@@ -20,6 +20,7 @@
     "required": [
       "COMPOSIO_API_KEY",
       "INVITE_ADMIN_TOKEN",
+      "RELEASE_PREFLIGHT_TOKEN",
       "IDENTITY_PEPPER"
     ]
   },

@@ -432,6 +432,18 @@ export async function markAgentConnectionAuthorized(
   return Number(result.meta.changes ?? 0) === 1;
 }
 
+// The newest grant that could actually serve a tool call, used by the preflight
+// to prove the whole chain rather than only the auth config.
+export async function getLiveGmailSession() {
+  return await runtimeEnv()
+    .DB.prepare(
+      `SELECT session_id FROM agent_connections
+       WHERE authorized_at IS NOT NULL AND revoked_at IS NULL AND session_id IS NOT NULL
+       ORDER BY authorized_at DESC LIMIT 1`,
+    )
+    .first<{ session_id: string }>();
+}
+
 export async function markAgentConnectionNeedsReconnect(id: string) {
   const result = await runtimeEnv().DB.prepare(
     `UPDATE agent_connections
