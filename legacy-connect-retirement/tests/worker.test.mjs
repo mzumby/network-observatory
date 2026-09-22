@@ -102,9 +102,15 @@ test("retirement page has one safe destination and no setup mechanism", async ()
   const body = await response.text();
   const links = [...body.matchAll(/<a\s[^>]*href="([^"]+)"/gi)].map((match) => match[1]);
 
-  assert.deepEqual(links, ["https://agentmarkit.com/manage/"]);
-  assert.match(body, /<svg[^>]+aria-label="AgentMarkit"/);
+  assert.equal(links.length, 2);
+  assert.deepEqual([...new Set(links)], ["https://agentmarkit.com/manage/"]);
+  assert.match(body, /class="brand"><svg[^>]+viewBox="0 0 650 128"[^>]+aria-label="AgentMarkit"/);
+  assert.ok(
+    body.indexOf('<div class="actions">') < body.indexOf('<div class="grid">'),
+    "the primary exit must appear before the explanatory cards",
+  );
   assert.doesNotMatch(body, /<form\b|<input\b|<button\b|<script\b/i);
+  assert.doesNotMatch(body, /<img\b|<link\b[^>]+stylesheet/i);
   assert.doesNotMatch(body, /http-equiv=["']refresh|window\.location|location\.href/i);
   assert.doesNotMatch(body, /bearer|hermes\s+mcp|mcp\s+add|nobs_[a-z0-9]+/i);
 });

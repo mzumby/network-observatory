@@ -30,6 +30,9 @@ test("the customer flow starts from an agent and automatically hands off to Goog
   assert.match(page, /disclosureVersion:\s*DISCLOSURE_VERSION/);
   assert.match(page, /Open Google/);
   assert.match(page, /window\.history\.replaceState/);
+  assert.match(page, /listenForConnectionHashChange/);
+  assert.match(page, /exchangeHandoffOnce\(connectionId\)/);
+  assert.match(page, /handoffExchanges\.get\(connectionId\)/);
   assert.match(page, /window\.location\.assign\(connectUrl\)/);
   assert.match(page, /credentials:\s*"same-origin"/);
   assert.match(page, /sessionStorage\.setItem\(FLOW_TAB_KEY, data\.tabToken\)/);
@@ -43,6 +46,8 @@ test("the customer flow starts from an agent and automatically hands off to Goog
   assert.match(completePage, /export \{ default \} from "\.\.\/\.\.\/connected\/page"/);
   assert.doesNotMatch(page, /type="email"|clipboard|hermesCommand|mcpUrl|Composio|Network Observatory/i);
   assert.doesNotMatch(page, /copy this|paste it|private endpoint|enrichment setup/i);
+  assert.match(page, /belongs to the browser tab where setup began/);
+  assert.doesNotMatch(page, /same browser tab where you started/);
   assert.doesNotMatch(page, /target="_blank"/);
 
   assert.match(connected, /\/api\/connections\/status/);
@@ -58,7 +63,10 @@ test("the customer flow starts from an agent and automatically hands off to Goog
   assert.match(styles, /--lime:\s*#d7f46d/);
   assert.match(styles, /"Avenir Next"/);
   assert.match(styles, /"SFMono-Regular"/);
-  assert.match(styles, /min-height:\s*44px/);
+  assert.match(styles, /h1\s*\{[\s\S]*?font-weight:\s*780/);
+  assert.match(styles, /\.wordmark\s*\{[\s\S]*?min-height:\s*44px/);
+  assert.match(styles, /\.header-link\s*\{[\s\S]*?min-height:\s*44px/);
+  assert.match(styles, /\.site-footer a\s*\{[\s\S]*?min-height:\s*44px/);
   assert.doesNotMatch(styles, /#d94717|radial-gradient|prefers-color-scheme:\s*dark/i);
 });
 

@@ -70,6 +70,7 @@ summary:focus-visible {
 }
 
 .wordmark {
+  min-height: 44px;
   display: inline-flex;
   align-items: center;
   gap: 10px;
@@ -88,6 +89,10 @@ summary:focus-visible {
 }
 
 .header-link {
+  min-height: 44px;
+  padding: 0 4px;
+  display: inline-flex;
+  align-items: center;
   color: var(--muted);
   font-family: var(--mono-font);
   font-size: 14px;
@@ -157,6 +162,8 @@ h1 {
   max-width: 650px;
   margin: 0;
   font-size: clamp(38px, 7vw, 58px);
+  font-variant-ligatures: none;
+  font-weight: 780;
   line-height: 1.04;
   letter-spacing: -0.055em;
 }
@@ -292,6 +299,9 @@ summary {
 }
 
 .site-footer a {
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
   text-underline-offset: 4px;
 }
 
