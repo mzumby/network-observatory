@@ -5,7 +5,7 @@ import test from "node:test";
 const read = (path) => readFile(new URL(path, import.meta.url), "utf8");
 
 test("the customer flow starts from an agent and automatically hands off to Google", async () => {
-  const [page, connected, authorizePage, completePage, layout, styles, mark, logo] = await Promise.all([
+  const [page, connected, authorizePage, completePage, layout, styles, mark, logo, flowHelpers] = await Promise.all([
     read("../app/page.tsx"),
     read("../app/connected/page.tsx"),
     read("../app/gmail/authorize/page.tsx"),
@@ -14,6 +14,7 @@ test("the customer flow starts from an agent and automatically hands off to Goog
     read("../app/globals.css"),
     read("../public/agentmarkit-mark.svg"),
     read("../public/agentmarkit-logo.svg"),
+    read("../lib/connection-fragment.mjs"),
   ]);
 
   assert.match(layout, /Gmail metadata \| AgentMarkit/);
@@ -25,19 +26,25 @@ test("the customer flow starts from an agent and automatically hands off to Goog
   assert.match(page, /\/api\/connections\/current/);
   assert.match(page, /\/api\/connections\/handoff/);
   assert.match(page, /\/api\/connections\/authorize/);
-  assert.match(page, /requestGoogleAuthorization\(page\.connection\.connectionId\)/);
-  assert.match(page, /accepted:\s*true/);
-  assert.match(page, /disclosureVersion:\s*DISCLOSURE_VERSION/);
+  assert.match(page, /prepareAuthorization\(page\.flow\)/);
+  assert.match(page, /gmailAuthorizationRequest\(flow, DISCLOSURE_VERSION\)/);
+  assert.match(flowHelpers, /accepted:\s*true/);
+  assert.match(flowHelpers, /disclosureVersion/);
   assert.match(page, /Open Google/);
   assert.match(page, /window\.history\.replaceState/);
   assert.match(page, /listenForConnectionHashChange/);
-  assert.match(page, /exchangeHandoffOnce\(connectionId\)/);
-  assert.match(page, /handoffExchanges\.get\(connectionId\)/);
-  assert.match(page, /window\.location\.assign\(connectUrl\)/);
+  assert.match(page, /createBrowserConnectionFlowCoordinator/);
+  assert.match(page, /scheduleNavigation\(page\.flow, connectUrl, 120\)/);
+  assert.match(page, /cancelNavigation\(page\.flow\)/);
   assert.match(page, /credentials:\s*"same-origin"/);
-  assert.match(page, /sessionStorage\.setItem\(FLOW_TAB_KEY, data\.tabToken\)/);
-  assert.match(page, /"x-agentmarkit-flow"/);
-  assert.match(page, /"x-agentmarkit-connection"/);
+  assert.match(page, /sessionStorage\.setItem\(FLOW_TAB_KEY, flow\.tabToken\)/);
+  assert.match(page, /sessionStorage\.setItem\(FLOW_CONNECTION_KEY, flow\.connectionId\)/);
+  assert.match(flowHelpers, /"x-agentmarkit-flow"/);
+  assert.match(flowHelpers, /"x-agentmarkit-connection"/);
+  assert.match(page, /headers: browserFlowHeaders\(flow\)/);
+  assert.match(flowHelpers, /"x-agentmarkit-flow": flow\.tabToken/);
+  assert.match(flowHelpers, /"x-agentmarkit-connection": flow\.connectionId/);
+  assert.match(flowHelpers, /connectionId: flow\.connectionId/);
   assert.match(page, /src="\/agentmarkit-logo\.svg"/);
   assert.match(mark, /aria-label="AgentMarkit"/);
   assert.match(logo, /viewBox="0 0 650 128"/);

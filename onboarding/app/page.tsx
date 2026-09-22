@@ -3,7 +3,10 @@
 /* eslint-disable @next/next/no-img-element */
 import { useEffect, useState } from "react";
 import {
+  browserFlowHeaders,
   connectionIdFromHash,
+  createBrowserConnectionFlowCoordinator,
+  gmailAuthorizationRequest,
   listenForConnectionHashChange,
 } from "@/lib/connection-fragment.mjs";
 
@@ -19,16 +22,14 @@ type Connection = {
   returnUrl: string | null;
 };
 
-// React runs effects twice in development. Keep the one-time handoff exchange
-// alive between those effect runs so the first request is not cancelled after
-// the URL fragment has already been removed.
-const handoffExchanges = new Map<string, Promise<void>>();
-let latestHandoffExchange: Promise<void> | null = null;
-let pendingGoogleAuthorization: Promise<string> | null = null;
+type BrowserFlow = {
+  connectionId: string;
+  tabToken: string;
+};
 
 class ConnectionPageError extends Error {}
 
-function exchangeHandoff(connectionId: string) {
+function exchangeHandoff(connectionId: string): Promise<BrowserFlow> {
   return fetch("/api/connections/handoff", {
     method: "POST",
     credentials: "same-origin",
@@ -39,67 +40,67 @@ function exchangeHandoff(connectionId: string) {
     if (!response.ok || !data.tabToken?.startsWith("tab_")) {
       throw new ConnectionPageError(data.error || "We could not open this Gmail connection.");
     }
-    window.sessionStorage.setItem(FLOW_TAB_KEY, data.tabToken);
-    window.sessionStorage.setItem(FLOW_CONNECTION_KEY, connectionId);
+    return { connectionId, tabToken: data.tabToken };
   });
 }
 
-function exchangeHandoffOnce(connectionId: string) {
-  let exchange = handoffExchanges.get(connectionId);
-  if (!exchange) {
-    exchange = exchangeHandoff(connectionId);
-    handoffExchanges.set(connectionId, exchange);
-  }
-  latestHandoffExchange = exchange;
-  return exchange;
+function persistBrowserFlow(flow: BrowserFlow) {
+  window.sessionStorage.setItem(FLOW_TAB_KEY, flow.tabToken);
+  window.sessionStorage.setItem(FLOW_CONNECTION_KEY, flow.connectionId);
 }
 
-function flowHeader() {
-  return {
-    "x-agentmarkit-flow": window.sessionStorage.getItem(FLOW_TAB_KEY) || "",
-    "x-agentmarkit-connection":
-      window.sessionStorage.getItem(FLOW_CONNECTION_KEY) || "",
-  };
+function browserFlowFromSession(): BrowserFlow | null {
+  const tabToken = window.sessionStorage.getItem(FLOW_TAB_KEY) || "";
+  const connectionId = window.sessionStorage.getItem(FLOW_CONNECTION_KEY) || "";
+  if (
+    !/^tab_[a-f0-9]{48}$/.test(tabToken) ||
+    !/^acn_[a-f0-9]{24}$/.test(connectionId)
+  ) {
+    return null;
+  }
+  return { connectionId, tabToken };
 }
 
-function requestGoogleAuthorization(connectionId: string) {
-  if (!pendingGoogleAuthorization) {
-    pendingGoogleAuthorization = fetch("/api/connections/authorize", {
-      method: "POST",
-      headers: { "content-type": "application/json", ...flowHeader() },
-      body: JSON.stringify({
-        connectionId,
-        accepted: true,
-        disclosureVersion: DISCLOSURE_VERSION,
-      }),
-    })
-      .then(async (response) => {
-        const data = (await response.json().catch(() => null)) as
-          | { connectUrl?: string; error?: string }
-          | null;
-        if (!response.ok || !data?.connectUrl) {
-          throw new ConnectionPageError(
-            data?.error || "Google could not be opened. Try again.",
-          );
-        }
-        const target = new URL(data.connectUrl);
-        if (target.protocol !== "https:" || target.username || target.password) {
-          throw new ConnectionPageError("Google returned an unsafe approval link.");
-        }
-        return target.href;
-      })
-      .catch((cause) => {
-        pendingGoogleAuthorization = null;
-        throw cause;
-      });
-  }
-  return pendingGoogleAuthorization;
+function requestGoogleAuthorization(flow: BrowserFlow) {
+  const request = gmailAuthorizationRequest(flow, DISCLOSURE_VERSION);
+  return fetch("/api/connections/authorize", {
+    method: "POST",
+    ...request,
+  }).then(async (response) => {
+    const data = (await response.json().catch(() => null)) as
+      | { connectUrl?: string; error?: string }
+      | null;
+    if (!response.ok || !data?.connectUrl) {
+      throw new ConnectionPageError(
+        data?.error || "Google could not be opened. Try again.",
+      );
+    }
+    const target = new URL(data.connectUrl);
+    if (target.protocol !== "https:" || target.username || target.password) {
+      throw new ConnectionPageError("Google returned an unsafe approval link.");
+    }
+    return target.href;
+  });
 }
+
+// The coordinator keeps only concurrent work. Settled handoffs are evicted so a
+// newly issued one-use cookie for the same connection can be consumed. Its
+// latest in-flight promise bridges React's development effect replay after the
+// URL fragment has already been removed.
+const browserConnectionFlow = createBrowserConnectionFlowCoordinator({
+  exchange: exchangeHandoff,
+  authorize: requestGoogleAuthorization,
+  persist: persistBrowserFlow,
+  schedule: (callback: () => void, delay: number) =>
+    window.setTimeout(callback, delay),
+  cancel: (timer: number) => window.clearTimeout(timer),
+  navigate: (url: string) => window.location.assign(url),
+});
 
 type PageState =
   | { kind: "missing" }
   | { kind: "loading" }
-  | { kind: "ready"; connection: Connection }
+  | { kind: "ready"; connection: Connection; flow: BrowserFlow }
   | { kind: "error"; message: string };
 
 function Brand() {
@@ -136,6 +137,7 @@ export default function Home() {
       try {
         const problem = new URLSearchParams(window.location.search).get("problem");
         if (problem) {
+          browserConnectionFlow.invalidate();
           const messages: Record<string, string> = {
             "invalid-link": "This link is not valid.",
             "expired-link": "This link has expired.",
@@ -153,9 +155,10 @@ export default function Home() {
           return;
         }
 
-        const handoffExchange = connectionId
-          ? exchangeHandoffOnce(connectionId)
-          : latestHandoffExchange;
+        const flowRequest = browserConnectionFlow.begin(
+          connectionId,
+          browserFlowFromSession(),
+        );
         if (connectionId) {
           setPage({ kind: "loading" });
           setError("");
@@ -166,15 +169,23 @@ export default function Home() {
             `${window.location.pathname}${window.location.search}`,
           );
         }
-        if (handoffExchange) await handoffExchange;
+        const flow = await flowRequest.activate();
+        if (!isCurrent() || !flowRequest.isCurrent()) return;
+        if (!flow) {
+          setPage({ kind: "missing" });
+          return;
+        }
 
         const response = await fetch("/api/connections/current", {
           cache: "no-store",
-          headers: flowHeader(),
+          headers: browserFlowHeaders(flow),
           signal: controller.signal,
         });
         if (response.status === 401) {
-          if (isCurrent()) setPage({ kind: "missing" });
+          if (isCurrent() && flowRequest.isCurrent()) {
+            browserConnectionFlow.invalidate();
+            setPage({ kind: "missing" });
+          }
           return;
         }
         const data = (await response.json().catch(() => null)) as
@@ -185,7 +196,12 @@ export default function Home() {
             data?.error || "We could not open this Gmail connection.",
           );
         }
-        if (isCurrent()) setPage({ kind: "ready", connection: data });
+        if (data.connectionId !== flow.connectionId) {
+          throw new ConnectionPageError("We could not open this Gmail connection.");
+        }
+        if (isCurrent() && flowRequest.isCurrent()) {
+          setPage({ kind: "ready", connection: data, flow });
+        }
       } catch (cause) {
         if (!isCurrent()) return;
         if (cause instanceof DOMException && cause.name === "AbortError") return;
@@ -208,6 +224,7 @@ export default function Home() {
     return () => {
       stopped = true;
       activeController?.abort();
+      browserConnectionFlow.invalidate();
       stopListening();
     };
   }, []);
@@ -221,13 +238,13 @@ export default function Home() {
       return;
     }
     let stopped = false;
-    requestGoogleAuthorization(page.connection.connectionId)
+    browserConnectionFlow.prepareAuthorization(page.flow)
       .then((connectUrl) => {
-        if (stopped) return;
+        if (stopped || !connectUrl) return;
         setGoogleUrl(connectUrl);
         // Let the fallback link paint before leaving this page. If browser
         // navigation is interrupted, the exact same safe link remains usable.
-        window.setTimeout(() => window.location.assign(connectUrl), 120);
+        browserConnectionFlow.scheduleNavigation(page.flow, connectUrl, 120);
       })
       .catch((cause) => {
         if (stopped) return;
@@ -240,6 +257,7 @@ export default function Home() {
       });
     return () => {
       stopped = true;
+      browserConnectionFlow.cancelNavigation(page.flow);
     };
   }, [page]);
 
@@ -247,10 +265,11 @@ export default function Home() {
     if (page.kind !== "ready") return;
     setBusy(true);
     setError("");
-    requestGoogleAuthorization(page.connection.connectionId)
+    browserConnectionFlow.prepareAuthorization(page.flow)
       .then((connectUrl) => {
+        if (!connectUrl) return;
         setGoogleUrl(connectUrl);
-        window.location.assign(connectUrl);
+        browserConnectionFlow.navigateNow(page.flow, connectUrl);
       })
       .catch((cause) => {
         setError(
