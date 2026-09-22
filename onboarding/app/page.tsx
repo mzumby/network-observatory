@@ -1,6 +1,14 @@
 "use client";
 
+/* eslint-disable @next/next/no-img-element */
 import { useEffect, useState } from "react";
+import {
+  browserFlowHeaders,
+  connectionIdFromHash,
+  createBrowserConnectionFlowCoordinator,
+  gmailAuthorizationRequest,
+  listenForConnectionHashChange,
+} from "@/lib/connection-fragment.mjs";
 
 const DISCLOSURE_VERSION = "gmail-metadata-v1";
 const FLOW_TAB_KEY = "agentmarkit_gmail_flow";
@@ -14,14 +22,14 @@ type Connection = {
   returnUrl: string | null;
 };
 
-// React runs effects twice in development. Keep the one-time handoff exchange
-// alive between those effect runs so the first request is not cancelled after
-// the URL fragment has already been removed.
-let pendingHandoffExchange: Promise<void> | null = null;
+type BrowserFlow = {
+  connectionId: string;
+  tabToken: string;
+};
 
 class ConnectionPageError extends Error {}
 
-function exchangeHandoff(connectionId: string) {
+function exchangeHandoff(connectionId: string): Promise<BrowserFlow> {
   return fetch("/api/connections/handoff", {
     method: "POST",
     credentials: "same-origin",
@@ -32,29 +40,78 @@ function exchangeHandoff(connectionId: string) {
     if (!response.ok || !data.tabToken?.startsWith("tab_")) {
       throw new ConnectionPageError(data.error || "We could not open this Gmail connection.");
     }
-    window.sessionStorage.setItem(FLOW_TAB_KEY, data.tabToken);
-    window.sessionStorage.setItem(FLOW_CONNECTION_KEY, connectionId);
+    return { connectionId, tabToken: data.tabToken };
   });
 }
 
-function flowHeader() {
-  return {
-    "x-agentmarkit-flow": window.sessionStorage.getItem(FLOW_TAB_KEY) || "",
-    "x-agentmarkit-connection":
-      window.sessionStorage.getItem(FLOW_CONNECTION_KEY) || "",
-  };
+function persistBrowserFlow(flow: BrowserFlow) {
+  window.sessionStorage.setItem(FLOW_TAB_KEY, flow.tabToken);
+  window.sessionStorage.setItem(FLOW_CONNECTION_KEY, flow.connectionId);
 }
+
+function browserFlowFromSession(): BrowserFlow | null {
+  const tabToken = window.sessionStorage.getItem(FLOW_TAB_KEY) || "";
+  const connectionId = window.sessionStorage.getItem(FLOW_CONNECTION_KEY) || "";
+  if (
+    !/^tab_[a-f0-9]{48}$/.test(tabToken) ||
+    !/^acn_[a-f0-9]{24}$/.test(connectionId)
+  ) {
+    return null;
+  }
+  return { connectionId, tabToken };
+}
+
+function requestGoogleAuthorization(flow: BrowserFlow) {
+  const request = gmailAuthorizationRequest(flow, DISCLOSURE_VERSION);
+  return fetch("/api/connections/authorize", {
+    method: "POST",
+    ...request,
+  }).then(async (response) => {
+    const data = (await response.json().catch(() => null)) as
+      | { connectUrl?: string; error?: string }
+      | null;
+    if (!response.ok || !data?.connectUrl) {
+      throw new ConnectionPageError(
+        data?.error || "Google could not be opened. Try again.",
+      );
+    }
+    const target = new URL(data.connectUrl);
+    if (target.protocol !== "https:" || target.username || target.password) {
+      throw new ConnectionPageError("Google returned an unsafe approval link.");
+    }
+    return target.href;
+  });
+}
+
+// The coordinator keeps only concurrent work. Settled handoffs are evicted so a
+// newly issued one-use cookie for the same connection can be consumed. Its
+// latest in-flight promise bridges React's development effect replay after the
+// URL fragment has already been removed.
+const browserConnectionFlow = createBrowserConnectionFlowCoordinator({
+  exchange: exchangeHandoff,
+  authorize: requestGoogleAuthorization,
+  persist: persistBrowserFlow,
+  schedule: (callback: () => void, delay: number) =>
+    window.setTimeout(callback, delay),
+  cancel: (timer: number) => window.clearTimeout(timer),
+  navigate: (url: string) => window.location.assign(url),
+});
 
 type PageState =
   | { kind: "missing" }
   | { kind: "loading" }
-  | { kind: "ready"; connection: Connection }
+  | { kind: "ready"; connection: Connection; flow: BrowserFlow }
   | { kind: "error"; message: string };
 
 function Brand() {
   return (
     <a className="wordmark" href="https://agentmarkit.com/" aria-label="AgentMarkit home">
-      AgentMar<span>kit</span>
+      <img
+        src="/agentmarkit-logo.svg"
+        width="650"
+        height="128"
+        alt="AgentMarkit"
+      />
     </a>
   );
 }
@@ -63,64 +120,90 @@ export default function Home() {
   const [page, setPage] = useState<PageState>({ kind: "loading" });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [googleUrl, setGoogleUrl] = useState("");
 
   useEffect(() => {
-    const connectionId = new URLSearchParams(window.location.hash.slice(1)).get("connection");
-    if (connectionId && !pendingHandoffExchange) {
-      pendingHandoffExchange = exchangeHandoff(connectionId);
-    }
-    if (connectionId) {
-      window.history.replaceState(
-        null,
-        "",
-        `${window.location.pathname}${window.location.search}`,
-      );
-    }
-    const problem = new URLSearchParams(window.location.search).get("problem");
-    const controller = new AbortController();
     let stopped = false;
-    async function loadConnection() {
-      if (problem) {
-        const messages: Record<string, string> = {
-          "invalid-link": "This link is not valid.",
-          "expired-link": "This link has expired.",
-          "used-link": "This link has already been used.",
-          "not-ready": "Your agent is still being set up.",
-          "identity-check": "Open the Gmail connection from the same browser tab where you started.",
-          "verification-failed": "Google could not confirm this connection.",
-        };
-        if (!stopped) {
-          setPage({
-            kind: "error",
-            message: messages[problem] || "This link is not working.",
-          });
+    let sequence = 0;
+    let activeController: AbortController | null = null;
+
+    async function loadConnection(connectionId = "") {
+      const requestSequence = ++sequence;
+      activeController?.abort();
+      const controller = new AbortController();
+      activeController = controller;
+      const isCurrent = () => !stopped && requestSequence === sequence;
+
+      try {
+        const problem = new URLSearchParams(window.location.search).get("problem");
+        if (problem) {
+          browserConnectionFlow.invalidate();
+          const messages: Record<string, string> = {
+            "invalid-link": "This link is not valid.",
+            "expired-link": "This link has expired.",
+            "used-link": "This link has already been used.",
+            "not-ready": "Your agent is still being set up.",
+            "identity-check": "This Gmail connection belongs to the browser tab where setup began.",
+            "verification-failed": "Google could not confirm this connection.",
+          };
+          if (isCurrent()) {
+            setPage({
+              kind: "error",
+              message: messages[problem] || "This link is not working.",
+            });
+          }
+          return;
         }
-        return;
-      }
-      if (pendingHandoffExchange) await pendingHandoffExchange;
 
-      const response = await fetch("/api/connections/current", {
-        cache: "no-store",
-        headers: flowHeader(),
-        signal: controller.signal,
-      });
-      if (response.status === 401) {
-        if (!stopped) setPage({ kind: "missing" });
-        return;
-      }
-      const data = (await response.json().catch(() => null)) as
-        | (Connection & { error?: string })
-        | null;
-      if (!response.ok || !data) {
-        throw new ConnectionPageError(
-          data?.error || "We could not open this Gmail connection.",
+        const flowRequest = browserConnectionFlow.begin(
+          connectionId,
+          browserFlowFromSession(),
         );
-      }
-      if (!stopped) setPage({ kind: "ready", connection: data });
-    }
+        if (connectionId) {
+          setPage({ kind: "loading" });
+          setError("");
+          setGoogleUrl("");
+          window.history.replaceState(
+            null,
+            "",
+            `${window.location.pathname}${window.location.search}`,
+          );
+        }
+        const flow = await flowRequest.activate();
+        if (!isCurrent() || !flowRequest.isCurrent()) return;
+        if (!flow) {
+          setPage({ kind: "missing" });
+          return;
+        }
 
-    loadConnection().catch((cause) => {
-        if (stopped) return;
+        const response = await fetch("/api/connections/current", {
+          cache: "no-store",
+          headers: browserFlowHeaders(flow),
+          signal: controller.signal,
+        });
+        if (response.status === 401) {
+          if (isCurrent() && flowRequest.isCurrent()) {
+            browserConnectionFlow.invalidate();
+            setPage({ kind: "missing" });
+          }
+          return;
+        }
+        const data = (await response.json().catch(() => null)) as
+          | (Connection & { error?: string })
+          | null;
+        if (!response.ok || !data) {
+          throw new ConnectionPageError(
+            data?.error || "We could not open this Gmail connection.",
+          );
+        }
+        if (data.connectionId !== flow.connectionId) {
+          throw new ConnectionPageError("We could not open this Gmail connection.");
+        }
+        if (isCurrent() && flowRequest.isCurrent()) {
+          setPage({ kind: "ready", connection: data, flow });
+        }
+      } catch (cause) {
+        if (!isCurrent()) return;
         if (cause instanceof DOMException && cause.name === "AbortError") return;
         setPage({
           kind: "error",
@@ -129,45 +212,73 @@ export default function Home() {
               ? cause.message
               : "We could not open this Gmail connection. Try again from AgentMarkit.",
         });
-      });
+      }
+    }
+
+    const stopListening = listenForConnectionHashChange(
+      window,
+      (connectionId: string) => void loadConnection(connectionId),
+    );
+    void loadConnection(connectionIdFromHash(window.location.hash));
 
     return () => {
       stopped = true;
-      controller.abort();
+      activeController?.abort();
+      browserConnectionFlow.invalidate();
+      stopListening();
     };
   }, []);
 
-  async function continueToGoogle() {
+  useEffect(() => {
+    if (
+      page.kind !== "ready" ||
+      (page.connection.state !== "waiting" &&
+        page.connection.state !== "authorizing")
+    ) {
+      return;
+    }
+    let stopped = false;
+    browserConnectionFlow.prepareAuthorization(page.flow)
+      .then((connectUrl) => {
+        if (stopped || !connectUrl) return;
+        setGoogleUrl(connectUrl);
+        // Let the fallback link paint before leaving this page. If browser
+        // navigation is interrupted, the exact same safe link remains usable.
+        browserConnectionFlow.scheduleNavigation(page.flow, connectUrl, 120);
+      })
+      .catch((cause) => {
+        if (stopped) return;
+        setError(
+          cause instanceof ConnectionPageError
+            ? cause.message
+            : "Google could not be opened. Check your connection and try again.",
+        );
+        setBusy(false);
+      });
+    return () => {
+      stopped = true;
+      browserConnectionFlow.cancelNavigation(page.flow);
+    };
+  }, [page]);
+
+  function retryGoogle() {
     if (page.kind !== "ready") return;
     setBusy(true);
     setError("");
-    try {
-      const response = await fetch("/api/connections/authorize", {
-        method: "POST",
-        headers: { "content-type": "application/json", ...flowHeader() },
-        body: JSON.stringify({
-          connectionId: page.connection.connectionId,
-          accepted: true,
-          disclosureVersion: DISCLOSURE_VERSION,
-        }),
-      });
-      const data = (await response.json().catch(() => null)) as
-        | { connectUrl?: string; error?: string }
-        | null;
-      if (!response.ok || !data?.connectUrl) {
-        throw new ConnectionPageError(
-          data?.error || "Google could not be opened. Try again.",
+    browserConnectionFlow.prepareAuthorization(page.flow)
+      .then((connectUrl) => {
+        if (!connectUrl) return;
+        setGoogleUrl(connectUrl);
+        browserConnectionFlow.navigateNow(page.flow, connectUrl);
+      })
+      .catch((cause) => {
+        setError(
+          cause instanceof ConnectionPageError
+            ? cause.message
+            : "Google could not be opened. Check your connection and try again.",
         );
-      }
-      window.location.assign(data.connectUrl);
-    } catch (cause) {
-      setError(
-        cause instanceof ConnectionPageError
-          ? cause.message
-          : "Google could not be opened. Check your connection and try again.",
-      );
-      setBusy(false);
-    }
+        setBusy(false);
+      });
   }
 
   return (
@@ -182,17 +293,24 @@ export default function Home() {
       <main className="connection-page">
         {page.kind === "loading" ? (
           <section className="connection-sheet status-sheet" aria-live="polite">
-            <p>Opening your Gmail connection...</p>
+            <div>
+              <p className="section-label">Gmail metadata</p>
+              <h1>Opening Gmail</h1>
+              <div className="connection-progress">
+                <span className="progress-dot" aria-hidden="true" />
+                <span>Checking this connection...</span>
+              </div>
+            </div>
           </section>
         ) : null}
 
         {page.kind === "missing" ? (
           <section className="connection-sheet">
-            <p className="section-label">Gmail connection</p>
-            <h1>Connect Gmail to your agent</h1>
+            <p className="section-label">Gmail metadata</p>
+            <h1>Start from your agent</h1>
             <p className="intro">
-              To connect Gmail, open your agent in AgentMarkit and choose Connections,
-              then Gmail.
+              Open the agent you want to connect in AgentMarkit, then choose
+              Gmail metadata.
             </p>
             <a className="primary-action" href="https://agentmarkit.com/manage/">
               Open my agents
@@ -202,11 +320,11 @@ export default function Home() {
 
         {page.kind === "error" ? (
           <section className="connection-sheet">
-            <p className="section-label">Gmail connection</p>
+            <p className="section-label">Gmail metadata</p>
             <h1>We could not open this Gmail connection</h1>
             <p className="intro">{page.message}</p>
             <p className="help-copy">
-              Open your agent in AgentMarkit and start again from its Connections page.
+              Open your agent in AgentMarkit and start again from its Gmail metadata page.
             </p>
             <a className="primary-action" href="https://agentmarkit.com/manage/">
               Open my agents
@@ -217,10 +335,10 @@ export default function Home() {
         {page.kind === "ready" && page.connection.state === "connected" ? (
           <section className="connection-sheet">
             <p className="section-label connected-label">Connected</p>
-            <h1>Gmail is connected to {page.connection.agentName}</h1>
+            <h1>Gmail metadata is connected</h1>
             <p className="intro">
-              {page.connection.agentName} can see who you exchanged email with and
-              when. It cannot read what your messages say.
+              {page.connection.agentName} can now answer who you exchanged email with
+              and when. It still cannot read your messages.
             </p>
             <a className="primary-action" href={page.connection.returnUrl || "https://agentmarkit.com/manage/"}>
               Back to {page.connection.agentName}
@@ -230,81 +348,56 @@ export default function Home() {
 
         {page.kind === "ready" && page.connection.state === "needs_reconnect" ? (
           <section className="connection-sheet">
-            <p className="section-label">Gmail connection</p>
-            <h1>Reconnect Gmail to {page.connection.agentName}</h1>
+            <p className="section-label">Gmail metadata</p>
+            <h1>Reconnect Gmail in AgentMarkit</h1>
             <p className="intro">
-              This Gmail connection has stopped working. Open this agent in AgentMarkit
-              to reconnect it.
+              This connection has stopped working. AgentMarkit will safely replace the
+              old authorization when you reconnect it from {page.connection.agentName}.
             </p>
             <a
               className="primary-action"
               href={page.connection.returnUrl || "https://agentmarkit.com/manage/"}
             >
-              Back to {page.connection.agentName}
+              Reconnect Gmail
             </a>
           </section>
         ) : null}
 
         {page.kind === "ready" &&
         (page.connection.state === "waiting" || page.connection.state === "authorizing") ? (
-          <section className="connection-sheet">
-            <p className="section-label">Gmail connection</p>
-            <h1>Connect Gmail to {page.connection.agentName}</h1>
-            <p className="intro">
-              {page.connection.agentName} can see who you exchanged email with and
-              when. It cannot read what your messages say.
-            </p>
+          <section className="connection-sheet status-sheet" aria-live="polite">
+            <div>
+              <p className="section-label">Gmail metadata</p>
+              <h1>Opening Google</h1>
+              <p className="intro">
+                Google will ask you to approve access to email addresses, dates, and
+                labels for {page.connection.agentName}. This connection cannot read
+                message content or send email.
+              </p>
 
-            <div className="permission-grid" aria-label="What this connection allows">
-              <section>
-                <h2>{page.connection.agentName} can use</h2>
-                <ul>
-                  <li>The people on each email, including Cc and Bcc recipients</li>
-                  <li>The date and Gmail labels</li>
-                </ul>
-              </section>
-              <section>
-                <h2>{page.connection.agentName} cannot</h2>
-                <ul>
-                  <li>Read subjects, messages, previews, or attachments</li>
-                  <li>Create, send, delete, label, archive, or change email</li>
-                </ul>
-              </section>
-            </div>
-
-            <p className="testing-note">
-              This connection is still in testing. Only Google accounts we have approved
-              can connect. Google may ask you to reconnect after seven days.
-            </p>
-
-            {error ? <p className="error" role="alert">{error}</p> : null}
-
-            <button className="primary-action" type="button" onClick={continueToGoogle} disabled={busy}>
-              {busy ? "Opening Google..." : "Continue to Google"}
-            </button>
-
-            <details>
-              <summary>How your information is handled</summary>
-              <div className="details-copy">
-                <p>
-                  We use Composio to handle the connection with Google. When you ask a
-                  related question, {page.connection.agentName} can receive the people,
-                  dates, and labels described above. It also receives Gmail&apos;s internal
-                  date and stable message and thread IDs. Those IDs help it find the
-                  right record, but they do not contain the email itself.
-                </p>
-                <p>
-                  Disconnecting stops future access. It does not delete notes that
-                  {page.connection.agentName} has already saved.
-                </p>
+              <div className="connection-progress">
+                <span className="progress-dot" aria-hidden="true" />
+                <span>{googleUrl ? "Continue in Google." : "Preparing Google's approval page..."}</span>
               </div>
-            </details>
+
+              {error ? <p className="error" role="alert">{error}</p> : null}
+
+              {googleUrl ? (
+                <a className="primary-action" href={googleUrl} referrerPolicy="no-referrer">
+                  Open Google
+                </a>
+              ) : error ? (
+                <button className="primary-action" type="button" onClick={retryGoogle} disabled={busy}>
+                  {busy ? "Opening Google..." : "Try again"}
+                </button>
+              ) : null}
+            </div>
           </section>
         ) : null}
       </main>
 
       <footer className="site-footer">
-        <span>Only the agent you choose gets this connection.</span>
+        <span>Gmail metadata is a separate AgentMarkit connection.</span>
         <nav aria-label="Legal">
           <a href="https://agentmarkit.com/privacy/">Privacy</a>
           <a href="https://agentmarkit.com/data-controls/#google-controls">Google data controls</a>

@@ -56,7 +56,7 @@ summary:focus-visible {
 
 .site-header,
 .site-footer {
-  width: min(1120px, calc(100% - 96px));
+  width: min(1120px, calc(100% - 48px));
   margin: 0 auto;
 }
 
@@ -70,31 +70,29 @@ summary:focus-visible {
 }
 
 .wordmark {
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
   color: var(--ink);
   font-family: var(--mono-font);
-  font-size: 18px;
-  font-weight: 700;
-  letter-spacing: -0.04em;
+  font-size: 17px;
+  font-weight: 800;
+  letter-spacing: -0.06em;
   text-decoration: none;
 }
 
-.wordmark span {
-  position: relative;
-  z-index: 0;
-}
-
-.wordmark span::after {
-  content: "";
-  position: absolute;
-  z-index: -1;
-  left: -1px;
-  right: -1px;
-  bottom: -1px;
-  height: 7px;
-  background: var(--lime);
+.wordmark img {
+  width: 228px;
+  height: auto;
+  display: block;
 }
 
 .header-link {
+  min-height: 44px;
+  padding: 0 4px;
+  display: inline-flex;
+  align-items: center;
   color: var(--muted);
   font-family: var(--mono-font);
   font-size: 14px;
@@ -133,6 +131,10 @@ summary:focus-visible {
   width: 100%;
 }
 
+.status-sheet h1 {
+  color: var(--ink);
+}
+
 .section-label {
   width: fit-content;
   margin: 0 0 22px;
@@ -160,6 +162,8 @@ h1 {
   max-width: 650px;
   margin: 0;
   font-size: clamp(38px, 7vw, 58px);
+  font-variant-ligatures: none;
+  font-weight: 780;
   line-height: 1.04;
   letter-spacing: -0.055em;
 }
@@ -172,59 +176,6 @@ h1 {
   line-height: 1.55;
 }
 
-.permission-grid {
-  margin-top: 38px;
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  border: 1px solid var(--line);
-  background: var(--sheet);
-}
-
-.permission-grid section {
-  padding: 24px;
-}
-
-.permission-grid section + section {
-  border-left: 1px solid var(--line);
-}
-
-.permission-grid h2 {
-  margin: 0;
-  font-size: 15px;
-  line-height: 1.35;
-}
-
-.permission-grid ul {
-  margin: 18px 0 0;
-  padding: 0;
-  list-style: none;
-}
-
-.permission-grid li {
-  position: relative;
-  margin-top: 12px;
-  padding-left: 20px;
-  color: var(--muted);
-  font-size: 15px;
-  line-height: 1.45;
-}
-
-.permission-grid li::before {
-  content: "";
-  position: absolute;
-  left: 0;
-  top: 0.48em;
-  width: 8px;
-  height: 8px;
-  border: 1px solid currentColor;
-  background: var(--lime);
-}
-
-.permission-grid section + section li::before {
-  background: transparent;
-}
-
-.testing-note,
 .help-copy {
   margin: 24px 0 0;
   padding: 16px 18px;
@@ -236,7 +187,7 @@ h1 {
 }
 
 .primary-action {
-  min-height: 46px;
+  min-height: 44px;
   width: 100%;
   margin-top: 28px;
   padding: 12px 18px;
@@ -322,25 +273,6 @@ summary {
   animation: progress-spin 900ms linear infinite;
 }
 
-.try-this {
-  margin-top: 32px;
-  padding: 20px 22px;
-  border: 1px solid var(--line);
-  background: var(--paper);
-}
-
-.try-this span {
-  color: var(--muted);
-  font-family: var(--mono-font);
-  font-size: 13px;
-}
-
-.try-this p {
-  margin: 8px 0 0;
-  font-size: 18px;
-  line-height: 1.45;
-}
-
 @keyframes progress-spin {
   to {
     transform: rotate(360deg);
@@ -367,6 +299,9 @@ summary {
 }
 
 .site-footer a {
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
   text-underline-offset: 4px;
 }
 
@@ -379,15 +314,6 @@ summary {
   .connection-page {
     width: min(100% - 32px, 760px);
     padding: 40px 0 58px;
-  }
-
-  .permission-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .permission-grid section + section {
-    border-top: 1px solid var(--line);
-    border-left: 0;
   }
 
   .connection-sheet {
@@ -406,6 +332,10 @@ summary {
 @media (max-width: 430px) {
   .site-header {
     min-height: 62px;
+  }
+
+  .wordmark img {
+    width: 184px;
   }
 
   .connection-page {

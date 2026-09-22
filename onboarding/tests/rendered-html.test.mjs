@@ -4,45 +4,76 @@ import test from "node:test";
 
 const read = (path) => readFile(new URL(path, import.meta.url), "utf8");
 
-test("the customer flow starts from an agent and never asks for copy and paste", async () => {
-  const [page, connected, layout, styles] = await Promise.all([
+test("the customer flow starts from an agent and automatically hands off to Google", async () => {
+  const [page, connected, authorizePage, completePage, layout, styles, mark, logo, flowHelpers] = await Promise.all([
     read("../app/page.tsx"),
     read("../app/connected/page.tsx"),
+    read("../app/gmail/authorize/page.tsx"),
+    read("../app/gmail/complete/page.tsx"),
     read("../app/layout.tsx"),
     read("../app/globals.css"),
+    read("../public/agentmarkit-mark.svg"),
+    read("../public/agentmarkit-logo.svg"),
+    read("../lib/connection-fragment.mjs"),
   ]);
 
-  assert.match(layout, /Connect Gmail \| AgentMarkit/);
-  assert.match(page, /Connect Gmail to \{page\.connection\.agentName\}/);
-  assert.match(page, /Continue to Google/);
-  assert.match(page, /cannot\s+read what your messages say/);
+  assert.match(layout, /Gmail metadata \| AgentMarkit/);
+  assert.match(layout, /alt: "AgentMarkit"/);
+  assert.doesNotMatch(layout, /Network Observatory|og\.png/i);
+  assert.match(page, /Opening Google/);
+  assert.match(page, /approve access to email addresses, dates, and/);
+  assert.match(page, /cannot read\s+message content or send email/);
   assert.match(page, /\/api\/connections\/current/);
   assert.match(page, /\/api\/connections\/handoff/);
   assert.match(page, /\/api\/connections\/authorize/);
+  assert.match(page, /prepareAuthorization\(page\.flow\)/);
+  assert.match(page, /gmailAuthorizationRequest\(flow, DISCLOSURE_VERSION\)/);
+  assert.match(flowHelpers, /accepted:\s*true/);
+  assert.match(flowHelpers, /disclosureVersion/);
+  assert.match(page, /Open Google/);
   assert.match(page, /window\.history\.replaceState/);
-  assert.match(page, /window\.location\.assign\(data\.connectUrl\)/);
+  assert.match(page, /listenForConnectionHashChange/);
+  assert.match(page, /createBrowserConnectionFlowCoordinator/);
+  assert.match(page, /scheduleNavigation\(page\.flow, connectUrl, 120\)/);
+  assert.match(page, /cancelNavigation\(page\.flow\)/);
   assert.match(page, /credentials:\s*"same-origin"/);
-  assert.match(page, /sessionStorage\.setItem\(FLOW_TAB_KEY, data\.tabToken\)/);
-  assert.match(page, /"x-agentmarkit-flow"/);
-  assert.match(page, /"x-agentmarkit-connection"/);
-  assert.match(page, /including Cc and Bcc recipients/);
-  assert.match(page, /stable message and thread IDs/);
-  assert.doesNotMatch(page, /type="email"|clipboard|hermesCommand|mcpUrl/i);
+  assert.match(page, /sessionStorage\.setItem\(FLOW_TAB_KEY, flow\.tabToken\)/);
+  assert.match(page, /sessionStorage\.setItem\(FLOW_CONNECTION_KEY, flow\.connectionId\)/);
+  assert.match(flowHelpers, /"x-agentmarkit-flow"/);
+  assert.match(flowHelpers, /"x-agentmarkit-connection"/);
+  assert.match(page, /headers: browserFlowHeaders\(flow\)/);
+  assert.match(flowHelpers, /"x-agentmarkit-flow": flow\.tabToken/);
+  assert.match(flowHelpers, /"x-agentmarkit-connection": flow\.connectionId/);
+  assert.match(flowHelpers, /connectionId: flow\.connectionId/);
+  assert.match(page, /src="\/agentmarkit-logo\.svg"/);
+  assert.match(mark, /aria-label="AgentMarkit"/);
+  assert.match(logo, /viewBox="0 0 650 128"/);
+  assert.doesNotMatch(page, /src="https:\/\//);
+  assert.match(authorizePage, /export \{ default \} from "\.\.\/\.\.\/page"/);
+  assert.match(completePage, /export \{ default \} from "\.\.\/\.\.\/connected\/page"/);
+  assert.doesNotMatch(page, /type="email"|clipboard|hermesCommand|mcpUrl|Composio|Network Observatory/i);
   assert.doesNotMatch(page, /copy this|paste it|private endpoint|enrichment setup/i);
+  assert.match(page, /belongs to the browser tab where setup began/);
+  assert.doesNotMatch(page, /same browser tab where you started/);
   assert.doesNotMatch(page, /target="_blank"/);
 
   assert.match(connected, /\/api\/connections\/status/);
   assert.match(connected, /"x-agentmarkit-flow"/);
   assert.match(connected, /"x-agentmarkit-connection"/);
   assert.match(connected, /status\?\.state === "connected"/);
-  assert.match(connected, /Gmail is connected to/);
-  assert.doesNotMatch(connected, /Google approved|one more step|setup command/i);
+  assert.match(connected, /Gmail metadata is connected/);
+  assert.match(connected, /src="\/agentmarkit-logo\.svg"/);
+  assert.doesNotMatch(connected, /Google approved|one more step|setup command|Composio|Network Observatory/i);
 
   assert.match(styles, /--canvas:\s*#eef0ea/);
   assert.match(styles, /--blue:\s*#284ee8/);
   assert.match(styles, /--lime:\s*#d7f46d/);
   assert.match(styles, /"Avenir Next"/);
   assert.match(styles, /"SFMono-Regular"/);
+  assert.match(styles, /h1\s*\{[\s\S]*?font-weight:\s*780/);
+  assert.match(styles, /\.wordmark\s*\{[\s\S]*?min-height:\s*44px/);
+  assert.match(styles, /\.header-link\s*\{[\s\S]*?min-height:\s*44px/);
+  assert.match(styles, /\.site-footer a\s*\{[\s\S]*?min-height:\s*44px/);
   assert.doesNotMatch(styles, /#d94717|radial-gradient|prefers-color-scheme:\s*dark/i);
 });
 
@@ -110,6 +141,11 @@ test("agent handoffs are server-created, browser-bound, one-time, and stored as 
     safeStatus,
     /publicRecord|mcpBearerToken|handoffToken|connectUrl|mcpUrl/,
   );
+  assert.match(safeStatus, /getGmailConnectionStatus/);
+  assert.match(safeStatus, /probeGmailMetadata/);
+  assert.match(safeStatus, /confirmedGmailReconnectReason/);
+  assert.match(safeStatus, /markAgentConnectionNeedsReconnect/);
+  assert.match(safeStatus, /provider outage[\s\S]*last confirmed state/);
   assert.match(admin, /mcpUrl/);
   assert.match(admin, /mcpBearerToken/);
   assert.match(
@@ -148,7 +184,7 @@ test("agent handoffs are server-created, browser-bound, one-time, and stored as 
   assert.match(handoff, /non-secret connection ID/);
   assert.match(handoff, /before any call to Composio begins/);
   assert.doesNotMatch(handoff, /\/claim\/\$\{tokens\.handoffToken\}/);
-  assert.match(admin, /#connection=\$\{encodeURIComponent\(record\.id\)\}/);
+  assert.match(admin, /\/gmail\/authorize#connection=\$\{encodeURIComponent\(record\.id\)\}/);
   assert.doesNotMatch(admin, /#claim=/);
   assert.match(identity, /handoff-cookie\.mjs/);
   assert.match(identity, /browser-flow-cookie\.mjs/);

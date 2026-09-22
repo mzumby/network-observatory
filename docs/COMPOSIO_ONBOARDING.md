@@ -2,11 +2,12 @@
 
 > **Operator-only runbook.** Customers and agents should not follow these
 > provisioning commands. Their only setup entry point is the exact agent's
-> **Connections > Gmail** control in AgentMarkit.
+> **Connections > Gmail metadata** control in AgentMarkit.
 
 This runbook covers the AgentMarkit Gmail metadata connection and the controlled
-Day test. The customer flow is not live yet. Each customer will connect their
-own Google account, and each agent will get separate, revocable access.
+Day test. Each customer connects their own Google account, and each agent gets
+separate, revocable access. Verify the current deployment before describing a
+specific build as live.
 
 Day is the first test case. Nothing in the connection code is specific to Day.
 
@@ -53,7 +54,8 @@ the URL, page HTML, browser JavaScript, logs, or analytics. The cookie lasts fiv
 minutes at most. Its domain allows `connect.agentmarkit.com` to receive it, and
 its path limits browser requests carrying it to `/api/connections/handoff`.
 
-The Connect page posts the non-secret connection ID to
+The canonical authorization page is
+`https://connect.agentmarkit.com/gmail/authorize`. It posts the non-secret connection ID to
 `/api/connections/handoff`. Network Observatory checks the one-use handoff token,
 checks that it belongs to that connection, consumes it, and clears the parent-
 domain cookie. It then creates this host-only browser-flow cookie on
@@ -72,10 +74,10 @@ the tab token as `x-agentmarkit-flow` and the connection ID as
 per-connection cookie. This lets two agents run setup in separate tabs without
 overwriting each other's cookies.
 
-The Network Observatory half of this handoff is implemented in this pull
-request. The AgentMarkit half still needs a companion pull request and has not
-been merged or tested end to end. Keep the Network Observatory pull request in
-draft. Do not deploy or describe the customer flow as live yet.
+The root `/#connection=...` address remains a compatibility alias for handoffs
+issued before this route existed. Google returns through the stable verifier,
+then the browser finishes at `/gmail/complete`; `/connected` remains an alias
+for already-started authorizations.
 
 ## What is shared and what stays separate
 
@@ -294,7 +296,14 @@ curl --fail-with-body --silent --show-error \
 
 The GET response contains only `connectionId`, `agentName`, `state`,
 `installed`, and `handoffExpiresAt`. It does not include `mcpUrl`,
-`mcpBearerToken`, `handoffToken`, or `connectUrl`.
+`mcpBearerToken`, `handoffToken`, or `connectUrl`. For a record last known as
+connected, GET also checks the bound provider session. A successful provider
+response that confirms the account is inactive or mismatched changes the state
+to `needs_reconnect`. When the binding still looks active, GET also makes the
+same minimal metadata request used by preflight; an actual Gmail `401` confirms
+that the authorization is no longer usable. Scope refusals, quota responses,
+timeouts, transport errors, and provider outages leave the last confirmed state
+unchanged.
 
 After the owner and machine check, AgentMarkit calls PATCH again with
 `issueHandoff: true`, plus the same `ownerRef` and `installationRef` used to
@@ -338,10 +347,14 @@ instead of reusing its Composio session.
 
 ## Intended customer flow
 
-1. They open their agent in AgentMarkit and choose **Connections > Gmail**.
-2. The Connect page names the agent and explains what it can access.
-3. They click **Continue to Google** and choose their account.
-4. The page waits for confirmation before it says Gmail is connected.
+1. They open their agent in AgentMarkit and choose **Connections > Gmail metadata**.
+2. That page names the agent, explains the metadata-only boundary, and states
+   the current Google Testing limitation before the action.
+3. They click **Continue to Google**. The short authorization handoff at
+   `/gmail/authorize` opens Google automatically, with one fallback link if
+   browser navigation is interrupted.
+4. They choose their Google account. `/gmail/complete` waits for confirmation
+   before it says Gmail metadata is connected.
 5. They return to their agent and ask a question such as "Who have I emailed
    recently?"
 
@@ -354,10 +367,10 @@ agents**, where they can choose the agent first.
 
 ## Day test
 
-Day already exists, so this first test is a controlled operator run. The
-intended browser flow cannot be tested until the AgentMarkit companion exists.
-An operator-only harness can exercise the Network Observatory half, but that is
-not proof that the owner and machine binding works.
+Day already exists, so use it for a controlled real-account test after both
+services are deployed. An operator-only harness proves the connection-service
+half, but only a signed-in AgentMarkit journey proves the owner and machine
+binding, Google approval, return route, and first metadata lookup together.
 
 1. Enable Composio callback identity verification with the hosted verifier URL.
 2. Run the protected preflight and require an HTTP 200 result with every check
@@ -415,7 +428,8 @@ the same Google project and client. Offer that action only when the person
 explicitly asks to revoke the Google account authorization, not for an ordinary
 per-agent disconnect.
 
-Reconnect is a replacement, not a repair of the old grant:
+Reconnect is one customer action in AgentMarkit, but remains a safe replacement
+rather than a repair of the old grant behind that action:
 
 1. Revoke the old local grant so its bearer stops working.
 2. Finish deletion of its Composio session and connected-account record.

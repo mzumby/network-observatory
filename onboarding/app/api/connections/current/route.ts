@@ -21,7 +21,7 @@ export async function GET(request: Request) {
     browserTabToken.length > 128
   ) {
     return Response.json(
-      { error: "Open this page from your agent's Connections page." },
+      { error: "Open this page from your agent's Gmail metadata page." },
       { status: 401, headers: { "cache-control": "no-store" } },
     );
   }

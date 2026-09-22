@@ -1,5 +1,6 @@
 "use client";
 
+/* eslint-disable @next/next/no-img-element */
 import { useEffect, useState } from "react";
 
 type Status = {
@@ -81,7 +82,7 @@ export default function Connected() {
     <div className="site-frame">
       <header className="site-header">
         <a className="wordmark" href="https://agentmarkit.com/" aria-label="AgentMarkit home">
-          AgentMar<span>kit</span>
+          <img src="/agentmarkit-logo.svg" width="650" height="128" alt="AgentMarkit" />
         </a>
         <a className="header-link" href="https://agentmarkit.com/manage/">
           My agents
@@ -91,7 +92,7 @@ export default function Connected() {
       <main className="connection-page">
         {error ? (
           <section className="connection-sheet">
-            <p className="section-label">Gmail connection</p>
+            <p className="section-label">Gmail metadata</p>
             <h1>We could not check the connection</h1>
             <p className="intro">{error}</p>
             <a className="primary-action" href={backUrl}>Back to AgentMarkit</a>
@@ -99,33 +100,27 @@ export default function Connected() {
         ) : status?.state === "connected" ? (
           <section className="connection-sheet">
             <p className="section-label connected-label">Connected</p>
-            <h1>Gmail is connected to {agentName}</h1>
+            <h1>Gmail metadata is connected</h1>
             <p className="intro">
-              {agentName} can now answer questions about who you exchanged email with
-              and when. It cannot read what your messages say.
+              {agentName} can now answer who you exchanged email with and when. It
+              still cannot read your messages.
             </p>
-            <div className="try-this">
-              <span>Next, in Discord</span>
-              <p>
-                Send <code>/new</code>, then ask &quot;Who have I been emailing recently?&quot;
-              </p>
-            </div>
             <a className="primary-action" href={backUrl}>Back to {agentName}</a>
           </section>
         ) : status?.state === "needs_reconnect" ? (
           <section className="connection-sheet">
-            <p className="section-label">Gmail connection</p>
-            <h1>Reconnect Gmail to {agentName}</h1>
+            <p className="section-label">Gmail metadata</p>
+            <h1>Reconnect Gmail in AgentMarkit</h1>
             <p className="intro">
-              This Gmail connection has stopped working. Return to AgentMarkit to
-              reconnect it.
+              This connection has stopped working. AgentMarkit will safely replace
+              the old authorization when you reconnect it.
             </p>
-            <a className="primary-action" href={backUrl}>Back to {agentName}</a>
+            <a className="primary-action" href={backUrl}>Reconnect Gmail</a>
           </section>
         ) : (
           <section className="connection-sheet status-sheet" aria-live="polite">
             <div>
-              <p className="section-label">Connecting Gmail</p>
+              <p className="section-label">Gmail metadata</p>
               <h1>Checking your Google account</h1>
               <p className="intro">
                 Keep this page open while we confirm the connection for {agentName}.
@@ -148,7 +143,7 @@ export default function Connected() {
       </main>
 
       <footer className="site-footer">
-        <span>Only the agent you choose gets this connection.</span>
+        <span>Gmail metadata is a separate AgentMarkit connection.</span>
         <nav aria-label="Legal">
           <a href="https://agentmarkit.com/privacy/">Privacy</a>
           <a href="https://agentmarkit.com/data-controls/#google-controls">Google data controls</a>

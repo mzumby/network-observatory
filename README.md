@@ -79,19 +79,19 @@ The AgentMarkit flow is designed to prepare a private, revocable connection for
 one named agent, then let its owner approve Google. The customer never handles a
 gateway credential, terminal command, or copy and paste step.
 
-Network Observatory now has the secure half of the AgentMarkit handoff.
+The AgentMarkit Gmail connection service provides the secure handoff.
 AgentMarkit will check the signed-in owner and exact machine, request a one-use
 handoff token with the verified owner and installation references, and receive
-it over its server connection. Network Observatory derives the stored owner
+it over its server connection. The Gmail service derives the stored owner
 identity again and checks the exact installation. AgentMarkit puts the token in
 a per-connection HttpOnly cookie for at most five minutes. The browser receives
-only a non-secret Connect address. Network Observatory consumes the handoff into
+only a non-secret authorization address. The Gmail service consumes the handoff into
 a per-connection, host-only flow cookie and a token kept in that browser tab
 before it starts Google approval. Separate agent setups do not overwrite each
 other.
 
 On a hosted agent, Gmail setup is available only when that exact agent has a
-**Connections > Gmail** control in AgentMarkit. When it is there, the owner uses
+**Connections > Gmail metadata** control in AgentMarkit. When it is there, the owner uses
 that control, reviews the narrow access, and continues to Google. When it is
 absent, the agent should say setup is unavailable and wait. It must not fall
 back to a generic Connect page, an old Worker link, a manual command, or a broad
@@ -109,12 +109,12 @@ snippets, bodies, or attachments. Google may require test users to reconnect
 after seven days while the OAuth app remains in Testing. Operator setup and
 revocation are documented in `docs/COMPOSIO_ONBOARDING.md`.
 
-For operators, the AgentMarkit service is a side-by-side cutover to a new Worker
-and a new D1 database. A fresh database needs migrations `0000` through `0006`
-before deployment; deploying does not run them. Keep the old Worker, database,
-and Composio resources until every legacy `/api/mcp/[token]` agent has been
-re-provisioned, reconnected, and tested. Retiring the old service is a separate
-approved change. See
+For operators, the AgentMarkit service uses its own Worker and D1 database. A
+fresh database needs migrations `0000` through `0006` before deployment;
+deploying does not run them. The reviewed legacy retirement Worker redirects
+only a clean browser root and permanently rejects API, token-shaped, and
+non-GET traffic. Once deployed, never roll that hostname back to the former
+mixed setup Worker. See
 [`docs/COMPOSIO_CUSTOM_GMAIL_RESET_GUIDE.md`](docs/COMPOSIO_CUSTOM_GMAIL_RESET_GUIDE.md)
 for the full runbook.
 

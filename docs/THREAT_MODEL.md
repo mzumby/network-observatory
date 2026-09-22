@@ -13,23 +13,21 @@ Google are external processors. AgentMarkit's authenticated owner and machine
 records are a separate trust boundary. Each Hermes instance is another trust
 boundary.
 
-Network Observatory implements its half of the owner-bound browser handoff.
-AgentMarkit must still implement its companion endpoint before release. That
-endpoint authenticates the owner, checks the exact machine and connection ID,
-then sends the verified owner and installation references to Network Observatory
-over the admin API. Network Observatory derives the private owner identity again
-and checks the exact installation before returning the one-use handoff.
-AgentMarkit puts that token in a per-connection HttpOnly cookie for no longer
-than the handoff's remaining five-minute lifetime. Until the companion is merged
-and tested, the intended Day browser flow cannot run. An operator-only harness
-can exercise the Network Observatory half but cannot prove the owner and machine
-check.
+The owner-bound browser handoff spans AgentMarkit and this service. AgentMarkit
+authenticates the owner, checks the exact machine and connection ID, then sends
+the verified owner and installation references over the admin API. The
+connection service derives the private owner identity again and checks the exact
+installation before returning the one-use handoff. AgentMarkit puts that token
+in a per-connection HttpOnly cookie for no longer than the handoff's remaining
+five-minute lifetime. Release verification must test both services together.
+An operator-only harness can exercise this service but cannot prove the owner
+and machine check.
 
 ## Main threats and controls
 
 | STRIDE area | Threat | Control |
 | --- | --- | --- |
-| Spoofing | Someone tries to connect Gmail to an agent they do not own | After checking the signed-in owner and exact machine, AgentMarkit sends `connectionId`, `ownerRef`, and `installationRef` with `issueHandoff: true`. Network Observatory derives the stored owner identity again and compares the exact installation. A mismatch returns not found. This control depends on the companion AgentMarkit change, which is required before release. |
+| Spoofing | Someone tries to connect Gmail to an agent they do not own | After checking the signed-in owner and exact machine, AgentMarkit sends `connectionId`, `ownerRef`, and `installationRef` with `issueHandoff: true`. The connection service derives the stored owner identity again and compares the exact installation. A mismatch returns not found. Both services must pass the release test together. |
 | Spoofing | Someone copies a Connect address into another browser | The address contains only a connection ID. Network Observatory also requires the matching handoff cookie, verifies that the token belongs to that connection, and consumes it once. |
 | Spoofing | Someone swaps the Google callback into another browser flow | Composio callback identity verification sends the `session_uri` to the hosted verifier. The verifier requires the same unexpired per-connection, host-only browser cookie and tab token that started the flow, plus the matching `x-agentmarkit-connection` header. This control works only when the Composio project setting is enabled. |
 | Spoofing | Someone guesses an agent's MCP bearer | The bearer includes HMAC-derived secret material, only its hash is stored in D1, and it is sent in an Authorization header rather than a URL. |
@@ -41,16 +39,19 @@ check.
 | Information disclosure | The admin token is used to recover an agent bearer | `INVITE_ADMIN_TOKEN` is high privilege. An idempotent create with matching fields returns the exact bearer. Keep the AgentMarkit copy only in its server-side secret store and never expose the provisioning API to browser code. |
 | Information disclosure | Agent bearer reaches a browser or chat | Provisioning returns it only to the authenticated server caller. AgentMarkit installs it through the machine's private secret channel and uses it only as an Authorization header. |
 | Information disclosure | Handoff token reaches browser code, URLs, or logs | AgentMarkit keeps the admin response on its server and sends the token only as a per-connection HttpOnly, Secure, SameSite=Strict cookie scoped to `/api/connections/handoff`. Its `Max-Age` is the smaller of 300 or the seconds remaining until `handoffExpiresAt`. The browser gets `connectUrl`, which contains no bearer token. Network Observatory clears the handoff cookie after the exchange. |
+| Information disclosure | A saved return URL sends a customer to an attacker-controlled page | Return URLs are limited to the exact HTTPS AgentMarkit origin and the named Gmail path. The temporary legacy form permits exactly one validated `id` value and no other query data. Userinfo, ports, fragments, alternate origins, and general AgentMarkit paths are rejected. |
 | Information disclosure | Gmail content leaks through a broad tool response | Gmail uses `gmail.metadata`; the server requests `format=metadata` and allowlists response fields |
 | Information disclosure | Plain customer identity is retained | Owner and installation references are converted into a grant-specific HMAC identity before they are sent to Composio. |
 | Denial of service | Handoff guessing or MCP flooding consumes quota | Handoff requests are capped at 512 bytes and 20 attempts per client in 15 minutes before token lookup. Handoff expiry, one-time consumption, browser-flow expiry, per-flow limits, per-token limits, payload limits, and disabled MCP batches further limit abuse. |
+| Denial of service | A temporary provider failure is mistaken for an expired grant | Status reconciliation changes a connected record only after a successful provider response confirms an inactive or mismatched account, or a real Gmail metadata request returns 401. Timeouts, transport failures, 403, 429, and 5xx responses preserve the last confirmed state. |
+| Elevation of privilege | A legacy token URL becomes usable again after rollback | The retirement Worker redirects only an exact query-free browser root. API paths, token-shaped URLs, query-bearing root requests, and all non-GET traffic return 410 without a `Location` header. Once deployed, the old mixed or token-path Worker must never be restored. |
 | Elevation of privilege | Agent discovers Composio write tools or workbench | Search, workbench, and multi-execute are disabled; the tester never reaches Composio directly |
 
 ## Residual risks
 
-- The secure flow depends on the AgentMarkit companion performing the owner,
-  machine, and connection checks before it sets the handoff cookie. That code is
-  not part of this repository and has not been merged or tested end to end.
+- The secure flow depends on AgentMarkit performing the owner, machine, and
+  connection checks before it sets the handoff cookie. That code is not part of
+  this repository, so every release still needs a cross-service test.
 - The handoff cookie uses `Domain=agentmarkit.com` so the AgentMarkit site can
   set it for `connect.agentmarkit.com`. A compromised AgentMarkit subdomain with
   the matching path could receive it. Keep all AgentMarkit subdomains trusted,
