@@ -5,7 +5,7 @@ import test from "node:test";
 const read = (path) => readFile(new URL(path, import.meta.url), "utf8");
 
 test("the customer flow starts from an agent and automatically hands off to Google", async () => {
-  const [page, connected, authorizePage, completePage, layout, styles, mark, logo, flowHelpers] = await Promise.all([
+  const [page, connected, authorizePage, completePage, layout, styles, mark, logo, flowHelpers, nextConfig] = await Promise.all([
     read("../app/page.tsx"),
     read("../app/connected/page.tsx"),
     read("../app/gmail/authorize/page.tsx"),
@@ -15,6 +15,7 @@ test("the customer flow starts from an agent and automatically hands off to Goog
     read("../public/agentmarkit-mark.svg"),
     read("../public/agentmarkit-logo.svg"),
     read("../lib/connection-fragment.mjs"),
+    read("../next.config.ts"),
   ]);
 
   assert.match(layout, /Gmail metadata \| AgentMarkit/);
@@ -75,6 +76,14 @@ test("the customer flow starts from an agent and automatically hands off to Goog
   assert.match(styles, /\.header-link\s*\{[\s\S]*?min-height:\s*44px/);
   assert.match(styles, /\.site-footer a\s*\{[\s\S]*?min-height:\s*44px/);
   assert.doesNotMatch(styles, /#d94717|radial-gradient|prefers-color-scheme:\s*dark/i);
+  assert.match(nextConfig, /key: "Cache-Control", value: "no-store"/);
+  assert.match(nextConfig, /key: "Referrer-Policy", value: "no-referrer"/);
+  assert.match(nextConfig, /key: "X-Content-Type-Options", value: "nosniff"/);
+  assert.match(nextConfig, /key: "X-Frame-Options", value: "DENY"/);
+  assert.match(nextConfig, /key: "X-Robots-Tag", value: "noindex, nofollow, noarchive"/);
+  assert.match(nextConfig, /source: "\/"/);
+  assert.match(nextConfig, /source: "\/connected"/);
+  assert.match(nextConfig, /source: "\/gmail\/:path\*"/);
 });
 
 test("browser routes never return the private agent connection", async () => {
