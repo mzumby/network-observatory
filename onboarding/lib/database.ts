@@ -53,6 +53,7 @@ export type McpAccess = {
   kind: "agent";
   connection_id: string;
   session_id: string | null;
+  connected_account_id: string | null;
   agent_name: string;
   authorized_at: string | null;
   needs_reconnect_at: string | null;
@@ -159,7 +160,8 @@ export async function getMcpToken(tokenHash: string) {
 
 export async function getMcpAccess(tokenHash: string): Promise<McpAccess | null> {
   const agent = await runtimeEnv().DB.prepare(
-    `SELECT id, session_id, agent_name, authorized_at, needs_reconnect_at
+    `SELECT id, session_id, connected_account_id, agent_name,
+       authorized_at, needs_reconnect_at
      FROM agent_connections
      WHERE mcp_token_hash = ? AND revoked_at IS NULL`,
   )
@@ -167,6 +169,7 @@ export async function getMcpAccess(tokenHash: string): Promise<McpAccess | null>
     .first<{
       id: string;
       session_id: string | null;
+      connected_account_id: string | null;
       agent_name: string;
       authorized_at: string | null;
       needs_reconnect_at: string | null;
@@ -176,6 +179,7 @@ export async function getMcpAccess(tokenHash: string): Promise<McpAccess | null>
         kind: "agent",
         connection_id: agent.id,
         session_id: agent.session_id,
+        connected_account_id: agent.connected_account_id,
         agent_name: agent.agent_name,
         authorized_at: agent.authorized_at,
         needs_reconnect_at: agent.needs_reconnect_at,
@@ -437,12 +441,12 @@ export async function markAgentConnectionAuthorized(
 export async function getLiveGmailSession() {
   return await runtimeEnv()
     .DB.prepare(
-      `SELECT session_id FROM agent_connections
+      `SELECT session_id, connected_account_id FROM agent_connections
        WHERE authorized_at IS NOT NULL AND revoked_at IS NULL
          AND needs_reconnect_at IS NULL AND session_id IS NOT NULL
        ORDER BY authorized_at DESC LIMIT 1`,
     )
-    .first<{ session_id: string }>();
+    .first<{ session_id: string; connected_account_id: string | null }>();
 }
 
 export async function markAgentConnectionNeedsReconnect(id: string) {

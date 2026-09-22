@@ -19,22 +19,79 @@ function jsonResponse(body) {
   });
 }
 
-test("Gmail proxy rejects a malformed nested status", async () => {
-  globalThis.fetch = async (_url, init) => {
+test("Gmail proxy uses the project endpoint with an explicit connected account", async () => {
+  globalThis.fetch = async (url, init) => {
+    assert.equal(
+      url,
+      "https://backend.composio.dev/api/v3.1/tools/execute/proxy",
+    );
     assert.ok(init?.signal instanceof AbortSignal);
+    assert.equal(init?.method, "POST");
+    const body = JSON.parse(String(init?.body || "{}"));
+    assert.equal(body.connected_account_id, "ca_test");
+    assert.equal(body.method, "GET");
+    assert.match(body.endpoint, /users\/me\/messages\/message-1/);
+    assert.deepEqual(Object.keys(body).sort(), [
+      "connected_account_id",
+      "endpoint",
+      "method",
+    ]);
     return jsonResponse({ data: {}, status: "200" });
   };
 
   await assert.rejects(
-    getGmailMessageMetadata("test-key", "trs_test", "message-1"),
+    getGmailMessageMetadata("test-key", "ca_test", "message-1"),
     /invalid Gmail status/,
+  );
+});
+
+test("Gmail proxy rejects a missing or malformed connected account before fetch", async () => {
+  let calls = 0;
+  globalThis.fetch = async () => {
+    calls += 1;
+    return jsonResponse({ data: {}, status: 200 });
+  };
+
+  for (const connectedAccountId of ["", "ca_", "trs_test", " ca_test", "ca_bad!"]) {
+    await assert.rejects(
+      getGmailMessageMetadata("test-key", connectedAccountId, "message-1"),
+      /missing a valid connected account/,
+    );
+  }
+  assert.equal(calls, 0);
+});
+
+test("Gmail proxy errors redact connected account IDs and email addresses", async () => {
+  globalThis.fetch = async () =>
+    jsonResponse({
+      status: 403,
+      data: {
+        error: {
+          errors: [{ reason: "forbidden" }],
+          message: "ca_private belongs to owner@example.com",
+        },
+      },
+    });
+
+  await assert.rejects(
+    getGmailMessageMetadata("test-key", "ca_private", "message-1"),
+    (error) => {
+      assert.doesNotMatch(error.message, /ca_private|owner@example\.com/);
+      assert.match(error.message, /\[connected account\]|\[address\]/);
+      return true;
+    },
   );
 });
 
 test("a sweep deduplicates, clamps, and skips messages deleted after listing", async () => {
   const requestedEndpoints = [];
-  globalThis.fetch = async (_url, init) => {
+  globalThis.fetch = async (url, init) => {
+    assert.equal(
+      url,
+      "https://backend.composio.dev/api/v3.1/tools/execute/proxy",
+    );
     const body = JSON.parse(String(init?.body || "{}"));
+    assert.equal(body.connected_account_id, "ca_test");
     requestedEndpoints.push(body.endpoint);
     if (body.endpoint.includes("/messages?")) {
       return jsonResponse({
@@ -66,7 +123,7 @@ test("a sweep deduplicates, clamps, and skips messages deleted after listing", a
     });
   };
 
-  const result = await sweepGmailMetadata("test-key", "trs_test", {
+  const result = await sweepGmailMetadata("test-key", "ca_test", {
     maxResults: 2,
   });
 
@@ -83,4 +140,5 @@ test("a sweep deduplicates, clamps, and skips messages deleted after listing", a
     ],
     nextPageToken: "next-page",
   });
+  assert.doesNotMatch(JSON.stringify(result), /ca_test/);
 });

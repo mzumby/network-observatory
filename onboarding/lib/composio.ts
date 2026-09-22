@@ -40,11 +40,12 @@ export function gmailFailureDetail(data: unknown) {
   const error = asRecord(asRecord(data).error);
   const reason = Array.isArray(error.errors) ? asRecord(error.errors[0]).reason : undefined;
   const message = typeof error.message === "string" ? error.message : "";
-  return [typeof reason === "string" ? reason : "", message]
-    .filter(Boolean)
-    .join(": ")
-    .replace(/[\w.+-]+@[\w.-]+/g, "[address]")
-    .slice(0, 300);
+  return redactConnectedAccountIds(
+    [typeof reason === "string" ? reason : "", message]
+      .filter(Boolean)
+      .join(": ")
+      .replace(/[\w.+-]+@[\w.-]+/g, "[address]"),
+  ).slice(0, 300);
 }
 
 interface ToolkitStatusResponse {
@@ -132,7 +133,7 @@ async function composioRequest<T>(
       nestedError ||
       (typeof data?.error === "string" ? data.error : null) ||
       `Composio returned ${response.status}`;
-    throw new Error(detail);
+    throw new Error(redactConnectedAccountIds(detail));
   }
   return data;
 }
@@ -319,11 +320,14 @@ export async function getGmailConnectionStatus(apiKey: string, sessionId: string
 
 // One real metadata request, the same shape the tools make. Reports rather than
 // throws, because a preflight wants the reason more than it wants an exception.
-export async function probeGmailMetadata(apiKey: string, sessionId: string) {
+export async function probeGmailMetadata(
+  apiKey: string,
+  connectedAccountId: string,
+) {
   try {
     await gmailProxy(
       apiKey,
-      sessionId,
+      connectedAccountId,
       "https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=1&includeSpamTrash=false",
     );
     return { ok: true, status: 200, reason: "" };
@@ -384,16 +388,19 @@ export async function deleteConnectedAccount(
 
 async function gmailProxy(
   apiKey: string,
-  sessionId: string,
+  connectedAccountId: string,
   endpoint: string,
 ) {
+  if (!/^ca_[A-Za-z0-9_-]{1,124}$/.test(connectedAccountId)) {
+    throw new Error("The Gmail connection is missing a valid connected account.");
+  }
   const response = await composioRequest<ProxyResponse>(
     apiKey,
-    `/tool_router/session/${encodeURIComponent(sessionId)}/proxy_execute`,
+    "/tools/execute/proxy",
     {
       method: "POST",
       body: JSON.stringify({
-        toolkit_slug: "gmail",
+        connected_account_id: connectedAccountId,
         endpoint,
         method: "GET",
       }),
@@ -419,9 +426,13 @@ function asRecord(value: unknown): Record<string, unknown> {
     : {};
 }
 
+function redactConnectedAccountIds(value: string) {
+  return value.replace(/ca_[A-Za-z0-9_-]+/g, "[connected account]");
+}
+
 export async function getGmailMessageMetadata(
   apiKey: string,
-  sessionId: string,
+  connectedAccountId: string,
   messageId: string,
 ) {
   const query = new URLSearchParams({ format: "metadata" });
@@ -431,12 +442,14 @@ export async function getGmailMessageMetadata(
   const endpoint =
     `https://gmail.googleapis.com/gmail/v1/users/me/messages/` +
     `${encodeURIComponent(messageId)}?${query.toString()}`;
-  return sanitizeGmailMessage(await gmailProxy(apiKey, sessionId, endpoint));
+  return sanitizeGmailMessage(
+    await gmailProxy(apiKey, connectedAccountId, endpoint),
+  );
 }
 
 export async function sweepGmailMetadata(
   apiKey: string,
-  sessionId: string,
+  connectedAccountId: string,
   options: {
     maxResults: number;
     pageToken?: string;
@@ -454,7 +467,9 @@ export async function sweepGmailMetadata(
 
   const endpoint =
     `https://gmail.googleapis.com/gmail/v1/users/me/messages?${query.toString()}`;
-  const list = asRecord(await gmailProxy(apiKey, sessionId, endpoint));
+  const list = asRecord(
+    await gmailProxy(apiKey, connectedAccountId, endpoint),
+  );
   const messages = Array.isArray(list.messages) ? list.messages : [];
   const ids = [
     ...new Set(
@@ -469,7 +484,7 @@ export async function sweepGmailMetadata(
     const chunk = await Promise.all(
       ids.slice(index, index + 5).map(async (id) => {
         try {
-          return await getGmailMessageMetadata(apiKey, sessionId, id);
+          return await getGmailMessageMetadata(apiKey, connectedAccountId, id);
         } catch (cause) {
           if (cause instanceof GmailProxyError && cause.status === 404) {
             return null;

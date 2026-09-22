@@ -220,6 +220,8 @@ test("a dormant agent connection lists the same two safe tools", async () => {
   assert.match(mcp, /mcpRequestCost/);
   assert.match(mcp, /`mcp:\$\{tokenHash\}`,[\s\S]*300,[\s\S]*requestCost/);
   assert.match(mcp, /resultIfStillAuthorized/);
+  assert.match(mcp, /status\.connectedAccountId !== connectedAccountId/);
+  assert.match(mcp, /current\.connected_account_id !== connectedAccountId/);
   assert.match(mcp, /if \(!access\)/);
   assert.doesNotMatch(mcp, /access\.kind !== "agent"/);
   assert.match(retiredPathMcp, /status:\s*410/);
@@ -230,6 +232,9 @@ test("a dormant agent connection lists the same two safe tools", async () => {
   assert.match(composio, /GMAIL_FETCH_MESSAGE_BY_MESSAGE_ID/);
   assert.match(composio, /getGmailConnectionStatus/);
   assert.match(composio, /connected_account\?\.status/);
+  assert.match(composio, /"\/tools\/execute\/proxy"/);
+  assert.match(composio, /connected_account_id:\s*connectedAccountId/);
+  assert.doesNotMatch(composio, /proxy_execute/);
   assert.match(composio, /response\.status < 200 \|\| response\.status >= 300/);
   assert.match(composio, /AbortSignal\.timeout\(COMPOSIO_TIMEOUT_MS\)/);
   assert.match(composio, /cause instanceof GmailProxyError && cause\.status === 404/);
@@ -279,15 +284,19 @@ test("health is local-only and the protected preflight verifies permissions", as
   assert.match(preflight, /ok \? 200 : 503/);
   assert.match(preflight, /const ok = authConfig\.verified && live\.ok !== false/);
   assert.match(preflight, /probeGmailMetadata/);
+  assert.match(preflight, /getGmailConnectionStatus/);
   assert.match(preflight, /liveGmailCall/);
   assert.doesNotMatch(preflight, /getLiveGmailSession\(\)\.catch/);
   assert.match(database, /needs_reconnect_at IS NULL/);
+  assert.match(database, /SELECT session_id, connected_account_id FROM agent_connections/);
+  assert.match(database, /SELECT id, session_id, connected_account_id, agent_name/);
   assert.match(composio, /users\/me\/messages\?maxResults=1/);
   assert.match(
     preflight,
     /connectionApiContract:\s*"agentmarkit-agent-bound-gmail-metadata\/v1"/,
   );
   assert.doesNotMatch(preflight, /connectionId:/);
+  assert.doesNotMatch(preflight, /connected_account_id/);
   assert.match(preflight, /requiredCallbackVerifier/);
   assert.match(preflight, /Settings > General > Configuration/);
   assert.match(runtime, /RELEASE_PREFLIGHT_TOKEN\?: string/);
