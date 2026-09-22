@@ -115,13 +115,14 @@ test("an out-of-order A to B switch can persist, authorize, and navigate only B"
   const activationB = requestB.activate();
 
   exchangeB.resolve(flowB);
-  assert.deepEqual(await activationB, flowB);
+  const activeB = await activationB;
+  assert.deepEqual(activeB, flowB);
   exchangeA.resolve(flowA);
   assert.equal(await activationA, null);
   assert.deepEqual(persisted, [flowB]);
 
   assert.equal(await browserFlow.prepareAuthorization(flowA), null);
-  const connectUrl = await browserFlow.prepareAuthorization(flowB);
+  const connectUrl = await browserFlow.prepareAuthorization(activeB);
   assert.equal(connectUrl, `https://accounts.google.test/${SECOND_CONNECTION_ID}`);
   assert.deepEqual(authorizationRequests, [
     {
@@ -147,7 +148,7 @@ test("an out-of-order A to B switch can persist, authorize, and navigate only B"
     ),
     false,
   );
-  assert.equal(browserFlow.scheduleNavigation(flowB, connectUrl, 120), true);
+  assert.equal(browserFlow.scheduleNavigation(activeB, connectUrl, 120), true);
   timers.forEach((callback) => callback());
   assert.deepEqual(navigations, [connectUrl]);
 });
@@ -244,4 +245,48 @@ test("switching connections during the paint delay cancels and guards stale navi
   // second line of defense beyond clearTimeout.
   scheduled.forEach(({ callback }) => callback());
   assert.deepEqual(navigations, [urlB]);
+});
+
+test("a cancelled timer cannot revive after the identical flow is reactivated", async () => {
+  const scheduled = [];
+  const navigations = [];
+  const sameFlow = flow(CONNECTION_ID, "e");
+  const browserFlow = coordinator({
+    schedule(callback) {
+      const timer = { callback, cancelled: false };
+      scheduled.push(timer);
+      return timer;
+    },
+    cancel(timer) {
+      timer.cancelled = true;
+    },
+    navigate(url) {
+      navigations.push(url);
+    },
+  });
+
+  const firstActivation = await browserFlow.begin("", sameFlow).activate();
+  assert.equal(
+    browserFlow.scheduleNavigation(
+      firstActivation,
+      "https://accounts.google.test/url-1",
+      120,
+    ),
+    true,
+  );
+
+  const secondActivation = await browserFlow.begin("", sameFlow).activate();
+  assert.equal(scheduled[0].cancelled, true);
+  assert.equal(
+    browserFlow.scheduleNavigation(
+      secondActivation,
+      "https://accounts.google.test/url-2",
+      120,
+    ),
+    true,
+  );
+
+  scheduled[0].callback();
+  scheduled[1].callback();
+  assert.deepEqual(navigations, ["https://accounts.google.test/url-2"]);
 });

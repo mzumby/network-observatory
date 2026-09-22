@@ -73,22 +73,29 @@ export function createBrowserConnectionFlowCoordinator({
 }) {
   const handoffs = new Map();
   const authorizations = new Map();
+  const activationGenerations = new WeakMap();
   let generation = 0;
   let activeFlow = null;
   let latestHandoff = null;
   let navigationTimer = null;
   let navigationFlowKey = "";
+  let navigationGeneration = 0;
 
   function cancelNavigation(flow = null) {
+    const ownerGeneration = flow ? activationGenerations.get(flow) : null;
     if (
       navigationTimer === null ||
-      (flow && navigationFlowKey !== flowKey(flow))
+      (flow &&
+        (ownerGeneration === undefined ||
+          navigationGeneration !== ownerGeneration ||
+          navigationFlowKey !== flowKey(flow)))
     ) {
       return false;
     }
     cancel(navigationTimer);
     navigationTimer = null;
     navigationFlowKey = "";
+    navigationGeneration = 0;
     return true;
   }
 
@@ -131,10 +138,15 @@ export function createBrowserConnectionFlowCoordinator({
           if (handoff && flow.connectionId !== handoff.connectionId) {
             throw new Error("The Gmail handoff returned the wrong connection.");
           }
-          activeFlow = flow;
-          persist(flow);
+          const activatedFlow = {
+            connectionId: flow.connectionId,
+            tabToken: flow.tabToken,
+          };
+          activationGenerations.set(activatedFlow, requestGeneration);
+          activeFlow = activatedFlow;
+          persist(activatedFlow);
           if (latestHandoff === handoff) latestHandoff = null;
-          return flow;
+          return activatedFlow;
         } catch (cause) {
           if (isCurrent() && latestHandoff === handoff) latestHandoff = null;
           throw cause;
@@ -144,7 +156,13 @@ export function createBrowserConnectionFlowCoordinator({
   }
 
   function isActive(flow) {
-    return Boolean(activeFlow && flowKey(activeFlow) === flowKey(flow));
+    const ownerGeneration = activationGenerations.get(flow);
+    return Boolean(
+      activeFlow &&
+        ownerGeneration === generation &&
+        activationGenerations.get(activeFlow) === ownerGeneration &&
+        flowKey(activeFlow) === flowKey(flow),
+    );
   }
 
   async function prepareAuthorization(flow) {
@@ -158,12 +176,30 @@ export function createBrowserConnectionFlowCoordinator({
     if (!isActive(flow)) return false;
     cancelNavigation();
     const key = flowKey(flow);
+    const ownerGeneration = activationGenerations.get(flow);
     navigationFlowKey = key;
-    navigationTimer = schedule(() => {
+    navigationGeneration = ownerGeneration;
+    const timer = schedule(() => {
+      if (
+        navigationTimer !== timer ||
+        navigationGeneration !== ownerGeneration ||
+        navigationFlowKey !== key
+      ) {
+        return;
+      }
       navigationTimer = null;
       navigationFlowKey = "";
-      if (activeFlow && flowKey(activeFlow) === key) navigate(url);
+      navigationGeneration = 0;
+      if (
+        generation === ownerGeneration &&
+        activeFlow &&
+        activationGenerations.get(activeFlow) === ownerGeneration &&
+        flowKey(activeFlow) === key
+      ) {
+        navigate(url);
+      }
     }, delay);
+    navigationTimer = timer;
     return true;
   }
 
