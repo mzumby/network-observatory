@@ -52,7 +52,7 @@ export async function POST(request: Request) {
     typeof body?.connectionId === "string" ? body.connectionId.trim() : "";
   if (!CONNECTION_ID_RE.test(connectionId)) {
     return reply(
-      { error: "Open Gmail from this agent's Connections page in AgentMarkit." },
+      { error: "Open Gmail from this agent's Gmail metadata page in AgentMarkit." },
       401,
     );
   }
@@ -78,7 +78,7 @@ export async function POST(request: Request) {
   const token = agentMarkitHandoffTokenFromRequest(request, connectionId);
   if (!HANDOFF_TOKEN_RE.test(token)) {
     return reply(
-      { error: "Open Gmail from this agent's Connections page in AgentMarkit." },
+      { error: "Open Gmail from this agent's Gmail metadata page in AgentMarkit." },
       401,
       clearHandoff,
     );

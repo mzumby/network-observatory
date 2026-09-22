@@ -25,7 +25,10 @@ import { requireRuntimeConfig } from "@/lib/runtime";
 export const dynamic = "force-dynamic";
 
 function destination(request: Request, problem?: string) {
-  const target = new URL(problem ? "/" : "/connected", request.url);
+  const target = new URL(
+    problem ? "/gmail/authorize" : "/gmail/complete",
+    request.url,
+  );
   if (problem) target.searchParams.set("problem", problem);
   return target.href;
 }
@@ -47,7 +50,7 @@ export async function GET() {
   const nonce = randomToken(18);
   const script = `
     (() => {
-      const fail = () => location.replace('/?problem=identity-check');
+      const fail = () => location.replace('/gmail/authorize?problem=identity-check');
       const query = new URLSearchParams(location.search);
       // Composio has returned the browser here two ways: an older callback that
       // carries session_uri for us to complete, and a newer one that completes

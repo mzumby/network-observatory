@@ -5,7 +5,7 @@ export const metadata: Metadata = {
   metadataBase: new URL(
     "https://connect.agentmarkit.com",
   ),
-  title: "Connect Gmail | AgentMarkit",
+  title: "Gmail metadata | AgentMarkit",
   description:
     "Let your agent use who you emailed and when. It cannot read your messages.",
   icons: {
@@ -13,25 +13,25 @@ export const metadata: Metadata = {
     shortcut: "/favicon.svg",
   },
   openGraph: {
-    title: "Connect Gmail | AgentMarkit",
+    title: "Gmail metadata | AgentMarkit",
     description:
       "Let your agent use who you emailed and when. It cannot read your messages.",
     type: "website",
     images: [
       {
-        url: "/og.png",
-        width: 1200,
-        height: 630,
-        alt: "Network Observatory constellation",
+        url: "/agentmarkit-mark.svg",
+        width: 128,
+        height: 128,
+        alt: "AgentMarkit",
       },
     ],
   },
   twitter: {
-    card: "summary_large_image",
-    title: "Connect Gmail | AgentMarkit",
+    card: "summary",
+    title: "Gmail metadata | AgentMarkit",
     description:
       "Let your agent use who you emailed and when. It cannot read your messages.",
-    images: ["/og.png"],
+    images: ["/agentmarkit-mark.svg"],
   },
 };
 

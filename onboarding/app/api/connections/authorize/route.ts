@@ -43,7 +43,7 @@ export async function POST(request: Request) {
     !browserTabToken.startsWith("tab_") ||
     browserTabToken.length > 128
   ) {
-    return reply({ error: "Start again from your agent's Connections page." }, 401);
+    return reply({ error: "Start again from your agent's Gmail metadata page." }, 401);
   }
   const browserTokenHash = await sha256(browserToken);
   const browserTabTokenHash = await sha256(browserTabToken);

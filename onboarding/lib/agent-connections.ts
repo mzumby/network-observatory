@@ -5,6 +5,7 @@ import {
   agentMarkitFlowTokenFromCookie,
 } from "./browser-flow-cookie.mjs";
 import { agentMarkitHandoffTokenFromCookie } from "./handoff-cookie.mjs";
+import { safeAgentReturnUrl as allowlistedAgentReturnUrl } from "./agent-return-url.mjs";
 
 export {
   AGENTMARKIT_FLOW_COOKIE_PATH,
@@ -125,13 +126,5 @@ export function clearBrowserCookie(requestUrl: string, connectionId: string) {
 }
 
 export function safeAgentReturnUrl(value: unknown) {
-  if (typeof value !== "string" || !value) return null;
-  try {
-    const url = new URL(value);
-    return url.protocol === "https:" && url.hostname === "agentmarkit.com"
-      ? url.href
-      : null;
-  } catch {
-    return null;
-  }
+  return allowlistedAgentReturnUrl(value);
 }

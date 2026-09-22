@@ -36,7 +36,8 @@ const RETIREMENT_HTML = `<!doctype html>
       background: var(--paper);
     }
 
-    .brand { font-weight: 800; letter-spacing: -0.05em; }
+    .brand { display: inline-flex; align-items: center; }
+    .brand svg { display: block; width: 34px; height: 34px; }
     .status { color: var(--muted); font-size: 12px; text-transform: uppercase; }
 
     main {
@@ -126,7 +127,7 @@ const RETIREMENT_HTML = `<!doctype html>
 </head>
 <body>
   <header>
-    <div class="brand">AgentMarkit</div>
+    <div class="brand"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="AgentMarkit"><g transform="translate(16)"><path fill="#E8FF00" d="M10 0H86L96 10V118L86 128H10L0 118V10Z"/><g fill="#11120F"><rect x="16" y="18" width="13" height="13"/><rect x="33" y="18" width="13" height="13"/><rect x="50" y="18" width="13" height="13"/><rect x="50" y="35" width="13" height="13"/><rect x="67" y="35" width="13" height="13"/><rect x="16" y="52" width="13" height="13"/><rect x="33" y="52" width="13" height="13"/><rect x="50" y="52" width="13" height="13"/><rect x="67" y="52" width="13" height="13"/><rect x="16" y="69" width="13" height="13"/><rect x="67" y="69" width="13" height="13"/><rect x="16" y="86" width="13" height="13"/><rect x="33" y="86" width="13" height="13"/><rect x="50" y="86" width="13" height="13"/><rect x="67" y="86" width="13" height="13"/><rect x="50" y="103" width="13" height="13"/><rect x="67" y="103" width="13" height="13"/></g></g></svg></div>
     <div class="status">Retired setup address</div>
   </header>
   <main>
@@ -137,16 +138,16 @@ const RETIREMENT_HTML = `<!doctype html>
       <section>
         <div class="number">01 / CONNECTION</div>
         <h2>Gmail metadata</h2>
-        <p>Open the agent you want to connect, then choose Connections and Gmail. It can use who, when, labels, and message IDs. It cannot read message bodies.</p>
+        <p>Open the agent you want to connect, then choose Gmail metadata. It can use who, when, labels, and message IDs. It cannot read message bodies.</p>
       </section>
       <section>
         <div class="number">02 / TOOL</div>
         <h2>Network Observatory</h2>
-        <p>Add it when you want to turn a LinkedIn export into a network map. Gmail is optional, and connecting it does not automatically scan or import anything.</p>
+        <p>If this tool is installed, set it up with your LinkedIn export. Otherwise choose it while building a new Mix-and-match agent. Gmail stays optional.</p>
       </section>
     </div>
     <div class="actions">
-      <a href="https://agentmarkit.com/manage/">Open My Agents</a>
+      <a href="https://agentmarkit.com/manage/">Open my agents</a>
       <div class="note">This retired address cannot start or repair a connection.</div>
     </div>
   </main>
@@ -157,6 +158,12 @@ const JSON_BODY = JSON.stringify({
   error: "gone",
   message: "This legacy connection service is retired. Continue in AgentMarkit.",
 });
+
+// The explicit empty fragment prevents browsers from inheriting a fragment
+// from the legacy URL, which the Worker cannot inspect.
+const AGENTMARKIT_DESTINATION = "https://agentmarkit.com/manage/#";
+const TOKEN_SHAPED_VALUE = /(?:nobs_|handoff_|flow_|tab_|acn_)[A-Za-z0-9_-]{8,}/i;
+const TOKEN_QUERY_KEY = /^(?:access_token|authorization|bearer|code|connection|key|session|token)$/i;
 
 const SECURITY_HEADERS = Object.freeze({
   "Cache-Control": "no-store",
@@ -180,20 +187,46 @@ function gone(body, contentType) {
   });
 }
 
+function moved() {
+  return new Response(null, {
+    status: 308,
+    headers: {
+      ...SECURITY_HEADERS,
+      Location: AGENTMARKIT_DESTINATION,
+    },
+  });
+}
+
 function isApiPath(pathname) {
   return pathname === "/api" || pathname.startsWith("/api/");
 }
 
+function isTokenShaped(url) {
+  let decodedPath = url.pathname;
+  try {
+    decodedPath = decodeURIComponent(url.pathname);
+  } catch {
+    // A malformed path is never eligible for the safe root redirect.
+  }
+  if (TOKEN_SHAPED_VALUE.test(`${decodedPath}${url.search}`)) return true;
+  return [...url.searchParams.keys()].some((key) => TOKEN_QUERY_KEY.test(key));
+}
+
 export function handleRequest(request) {
   const method = request.method.toUpperCase();
-  const pathname = new URL(request.url).pathname;
-  const head = method === "HEAD";
+  const url = new URL(request.url);
+  const pathname = url.pathname;
 
-  if ((method !== "GET" && !head) || isApiPath(pathname)) {
+  if (method === "GET" && pathname === "/" && !url.search) {
+    return moved();
+  }
+
+  const head = method === "HEAD";
+  if (method !== "GET" || isApiPath(pathname) || isTokenShaped(url)) {
     return gone(head ? null : JSON_BODY, "application/json; charset=utf-8");
   }
 
-  return gone(head ? null : RETIREMENT_HTML, "text/html; charset=utf-8");
+  return gone(RETIREMENT_HTML, "text/html; charset=utf-8");
 }
 
 export default {

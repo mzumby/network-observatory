@@ -2,7 +2,7 @@
 
 > **Operator-only runbook.** Customers and agents should not follow these
 > account, credential, deployment, or migration steps. Their only setup entry
-> point is the exact agent's **Connections > Gmail** control in AgentMarkit.
+> point is the exact agent's **Gmail metadata** connection page in AgentMarkit.
 
 This guide recreates the Network Observatory Gmail integration under a new
 Composio account and a new Google Cloud project. It also explains how
@@ -408,11 +408,9 @@ apply migrations, or deploy code against the old Worker or its D1 database.
 
 ## Part 10: Run the controlled Day test
 
-Do not rely only on the Composio Playground. This test checks the new
-connection path on Day, but it is not a production customer test. The intended
-browser handoff cannot be tested until the AgentMarkit companion exists. An
-operator-only harness can exercise the Network Observatory half, but it does
-not test the real owner and machine check.
+Do not rely only on the Composio Playground. This controlled test checks the
+provider and metadata boundary. Complete the release verification in Part 11
+before describing the customer flow as live.
 
 1. Confirm **Callback identity verification** is enabled in the Composio
    project and points to the hosted verifier URL.
@@ -428,27 +426,23 @@ not test the real owner and machine check.
    Gmail metadata tools.
 7. Mark the connection installed. Confirm that the response contains no
    `handoffToken` or `connectUrl`.
-8. Use an operator-only test harness to call PATCH with `issueHandoff: true`,
-   Day's exact `ownerRef`, and Day's exact `installationRef`. Network
-   Observatory re-derives the stored owner identity and checks the installation
-   before it returns `handoffToken`, `connectUrl`, and `handoffExpiresAt`.
-9. Put the token in a per-connection HttpOnly, Secure, SameSite=Strict cookie
-   scoped to `/api/connections/handoff` on `agentmarkit.com`. Set `Max-Age` to
-   the smaller of 300 or the seconds remaining until `handoffExpiresAt`. Return
-   only `connectUrl` to the browser.
-10. Check that the page says **Connect Gmail to Day**, then choose **Continue to
-   Google**.
-11. Approve your test Gmail account and wait for the page to confirm the
+8. From Day's Gmail metadata page in AgentMarkit, choose **Continue to Google**.
+   Confirm AgentMarkit verifies Day's owner and installation before it requests
+   the signed handoff.
+9. Confirm the Connect service briefly shows **Opening Google**, automatically
+   opens Google's approval page, and offers one **Open Google** fallback link if
+   navigation is interrupted.
+10. Approve your test Gmail account and wait for the page to confirm the
    connection.
-12. Ask Day a metadata-only question, such as, "Which people have I exchanged
+11. Ask Day a metadata-only question, such as, "Which people have I exchanged
    email with most recently?"
-13. Confirm the result contains addresses, dates, labels, and stable Gmail IDs
-    only. It must not contain subject lines, snippets, message bodies, or
-    attachments.
-14. Restart Day and repeat the question so the backfill path is tested across a
-    fresh agent session.
-15. Revoke Day's grant, finish the Composio cleanup, and confirm the old bearer
-    no longer works.
+12. Confirm the result contains addresses, dates, labels, and stable Gmail IDs
+   only. It must not contain subject lines, snippets, message bodies, or
+   attachments.
+13. Restart Day and repeat the question so the backfill path is tested across a
+   fresh agent session.
+14. Revoke Day's grant, finish the Composio cleanup, and confirm the old bearer
+   no longer works.
 
 In Composio, use **Platform** > **Users**, **Sessions**, and **Logs** to confirm
 that the test created a grant-scoped session and that calls are reaching the
@@ -459,15 +453,13 @@ Network Observatory no longer puts the secret in the browser address. A copied
 can be created only after AgentMarkit authenticates the owner and checks the
 exact machine and its saved `connectionId`.
 
-The Network Observatory half is in this pull request. The AgentMarkit endpoint
-that performs those owner and machine checks, sets the cookie, and returns the
-non-secret address still needs a companion pull request. Keep this pull request
-in draft until both halves pass an end-to-end test.
+Treat the Network Observatory service and AgentMarkit as one release unit for
+this flow. Keep both changes undeployed until the cross-service tests pass.
 
-## Part 11: Customer onboarding after the companion merge
+## Part 11: Customer onboarding and release verification
 
-This is the intended customer flow. It is not live until the AgentMarkit
-companion is merged and the checks below pass.
+This is the intended customer flow. Verify both deployed services before
+describing it as live.
 
 ### What AgentMarkit does first
 
@@ -512,12 +504,16 @@ AgentMarkit can call
 `GET /api/admin/agent-connections?connectionId=acn_example` to refresh the
 connection state without retrieving the MCP URL, MCP bearer, handoff token, or
 Connect address. The response contains only `connectionId`, `agentName`,
-`state`, `installed`, and `handoffExpiresAt`. A repeated handoff request returns
-the same active, unopened handoff. If it has expired, Network Observatory issues
-a new five-minute handoff. If the owner closes the Connect tab before Google
-authorization starts, choosing **Connect Gmail** again replaces the abandoned
-browser flow and invalidates its old tab tokens. If Google authorization already
-started, revoke the connection and create a new one.
+`state`, `installed`, and `handoffExpiresAt`. For a locally connected record,
+the service checks the bound provider session and account. It changes the state
+to `needs_reconnect` only when the provider confirms that the session is
+inactive, the account binding is wrong, or a Gmail metadata probe returns 401.
+Timeouts, provider outages, 403, 429, and 5xx responses preserve the last
+confirmed state. A repeated handoff request returns the same active, unopened
+handoff. If it has expired, Network Observatory issues a new five-minute
+handoff. If the owner closes the Connect tab before Google authorization
+starts, choosing **Connect Gmail** again replaces the abandoned browser flow
+and invalidates its old tab tokens.
 
 During the testing period, the operator must also add the person's exact Gmail
 address under **Google Auth platform > Audience > Test users**.
@@ -525,7 +521,7 @@ address under **Google Auth platform > Audience > Test users**.
 ### What the person does
 
 1. Opens their agent in AgentMarkit.
-2. Chooses **Connections > Gmail**.
+2. Opens **Gmail metadata**.
 3. Checks the short explanation of what the agent can access.
 4. Chooses **Continue to Google** and approves their account.
 5. Waits for the page to confirm the connection.
@@ -557,14 +553,16 @@ account-wide action. It may stop every agent using that Google account through
 the same Google project and client. Use it only when the person explicitly asks
 to revoke Google access for the account.
 
-To reconnect one agent:
+The customer reconnects with one **Reconnect Gmail** action. Behind that
+action, AgentMarkit must complete this sequence:
 
 1. Revoke the old local grant.
 2. Retry cleanup until the old Composio session and connected-account record
    are deleted.
 3. Provision a fresh grant and install its new private bearer on the agent.
 4. Send the signed-in owner through a new authenticated browser handoff and
-   Google approval flow.
+   Google approval flow without requiring another confirmation on the Connect
+   service.
 
 Do not reuse the old handoff, Composio session, connected account, or bearer.
 
@@ -665,8 +663,8 @@ reconnect affected accounts so Google issues fresh authorization.
       and the old browser tokens no longer work.
 - [ ] A connection ID from another machine fails, and a consumed handoff cannot
       be used again.
-- [ ] The AgentMarkit companion pull request is merged and the full Day flow is
-      tested before this Network Observatory pull request leaves draft.
+- [ ] The AgentMarkit and Network Observatory changes pass the full Day flow
+      together before either service is released.
 - [ ] Until those checks pass, nobody describes the flow as live.
 - [ ] Every legacy `/api/mcp/[token]` agent has a new agent-bound grant, a newly
       installed private bearer, a new Google approval, and a successful metadata

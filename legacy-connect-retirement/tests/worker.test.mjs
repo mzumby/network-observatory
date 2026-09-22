@@ -19,8 +19,17 @@ function assertSecurityHeaders(response) {
   assert.equal(response.headers.get("x-frame-options"), "DENY");
 }
 
-test("browser routes return the retirement page with a 410", async () => {
-  for (const path of ["/", "/connect", "/anything/here?from=old-link"]) {
+test("the exact safe browser root permanently redirects to AgentMarkit", async () => {
+  const response = await request("/");
+
+  assert.equal(response.status, 308);
+  assert.equal(response.headers.get("location"), "https://agentmarkit.com/manage/#");
+  assertSecurityHeaders(response);
+  assert.equal(await response.text(), "");
+});
+
+test("other browser routes return the retirement page with a 410", async () => {
+  for (const path of ["/connect", "/anything/here?from=old-link", "/?from=old-link"]) {
     const response = await request(path);
     const body = await response.text();
 
@@ -32,13 +41,32 @@ test("browser routes return the retirement page with a 410", async () => {
   }
 });
 
-test("HEAD browser requests carry the same status and headers without a body", async () => {
-  const response = await request("/old-setup", { method: "HEAD" });
+test("non-GET root requests never redirect", async () => {
+  const response = await request("/", { method: "HEAD" });
 
   assert.equal(response.status, 410);
-  assert.match(response.headers.get("content-type"), /^text\/html/);
+  assert.match(response.headers.get("content-type"), /^application\/json/);
   assertSecurityHeaders(response);
+  assert.equal(response.headers.get("location"), null);
   assert.equal(await response.text(), "");
+});
+
+test("token-shaped legacy URLs are always gone and never redirected", async () => {
+  const paths = [
+    "/nobs_0123456789abcdef",
+    "/old/acn_0123456789abcdef01234567",
+    "/?token=secret",
+    "/?connection=acn_0123456789abcdef01234567",
+    "/?next=nobs_0123456789abcdef",
+    "/%6eobs_0123456789abcdef",
+  ];
+  for (const path of paths) {
+    const response = await request(path);
+    assert.equal(response.status, 410, path);
+    assert.match(response.headers.get("content-type"), /^application\/json/, path);
+    assertSecurityHeaders(response);
+    assert.equal(response.headers.get("location"), null, path);
+  }
 });
 
 test("API routes and non-GET methods return 410 JSON", async () => {
@@ -70,11 +98,12 @@ test("API routes and non-GET methods return 410 JSON", async () => {
 });
 
 test("retirement page has one safe destination and no setup mechanism", async () => {
-  const response = await request("/");
+  const response = await request("/connect");
   const body = await response.text();
   const links = [...body.matchAll(/<a\s[^>]*href="([^"]+)"/gi)].map((match) => match[1]);
 
   assert.deepEqual(links, ["https://agentmarkit.com/manage/"]);
+  assert.match(body, /<svg[^>]+aria-label="AgentMarkit"/);
   assert.doesNotMatch(body, /<form\b|<input\b|<button\b|<script\b/i);
   assert.doesNotMatch(body, /http-equiv=["']refresh|window\.location|location\.href/i);
   assert.doesNotMatch(body, /bearer|hermes\s+mcp|mcp\s+add|nobs_[a-z0-9]+/i);

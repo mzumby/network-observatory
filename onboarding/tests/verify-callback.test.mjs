@@ -18,7 +18,7 @@ async function runHandshake(search, storage = {
   const sessionStorage = { getItem: (key) => (key in storage ? storage[key] : null) };
   const fetch = async (path, init) => {
     posts.push({ path, headers: init.headers, body: JSON.parse(init.body) });
-    return { json: async () => ({ redirect: "/connected" }) };
+    return { json: async () => ({ redirect: "/gmail/complete" }) };
   };
   new Function("location", "sessionStorage", "fetch", script)(location, sessionStorage, fetch);
   await new Promise((resolve) => setImmediate(resolve));
@@ -27,7 +27,7 @@ async function runHandshake(search, storage = {
 
 test("the newer Composio callback finishes the connection instead of failing the identity check", async () => {
   const { redirects, posts } = await runHandshake("?connected_account_id=ca_live_example&status=success");
-  assert.deepEqual(redirects, ["/connected"]);
+  assert.deepEqual(redirects, ["/gmail/complete"]);
   assert.equal(posts.length, 1);
   assert.equal(posts[0].path, "/api/connections/verify");
   assert.equal(posts[0].body.sessionUri, null);
@@ -37,7 +37,7 @@ test("the newer Composio callback finishes the connection instead of failing the
 
 test("the older session_uri callback still completes the same way", async () => {
   const { redirects, posts } = await runHandshake("?session_uri=https%3A%2F%2Fbackend.composio.dev%2Fx");
-  assert.deepEqual(redirects, ["/connected"]);
+  assert.deepEqual(redirects, ["/gmail/complete"]);
   assert.equal(posts[0].body.sessionUri, "https://backend.composio.dev/x");
 });
 
@@ -49,10 +49,10 @@ test("a callback naming its own failure is reported, never swallowed as success"
 test("a callback carrying neither handle, or a foreign tab, is refused", async () => {
   for (const search of ["", "?status=success"]) {
     const { redirects, posts } = await runHandshake(search);
-    assert.deepEqual(redirects, ["/?problem=identity-check"], `search=${search}`);
+    assert.deepEqual(redirects, ["/gmail/authorize?problem=identity-check"], `search=${search}`);
     assert.equal(posts.length, 0);
   }
   const foreign = await runHandshake("?connected_account_id=ca_x&status=success", {});
-  assert.deepEqual(foreign.redirects, ["/?problem=identity-check"]);
+  assert.deepEqual(foreign.redirects, ["/gmail/authorize?problem=identity-check"]);
   assert.equal(foreign.posts.length, 0);
 });

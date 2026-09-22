@@ -10,6 +10,7 @@ import {
   deleteSession,
   findGmailConnectedAccount,
   getGmailConnectionStatus,
+  probeGmailMetadata,
 } from "@/lib/composio";
 import { randomToken, secretMatches } from "@/lib/crypto";
 import {
@@ -21,8 +22,10 @@ import {
   recordAgentConnectionConnectedAccount,
   recordAgentConnectionRemoteCleanup,
   issueAgentConnectionHandoff,
+  markAgentConnectionNeedsReconnect,
   revokeAgentConnection,
 } from "@/lib/database";
+import { confirmedGmailReconnectReason } from "@/lib/gmail-connection-status.mjs";
 import { requireRuntimeConfig } from "@/lib/runtime";
 
 export const dynamic = "force-dynamic";
@@ -85,7 +88,7 @@ async function publicRecord(
     ...(reveal.handoff
       ? {
           connectUrl: handoffAvailable
-            ? `${origin}/#connection=${encodeURIComponent(record.id)}`
+            ? `${origin}/gmail/authorize#connection=${encodeURIComponent(record.id)}`
             : null,
           handoffToken: handoffAvailable && tokens ? tokens.handoffToken : null,
         }
@@ -104,21 +107,48 @@ export async function GET(request: Request) {
     return reply({ error: "Provide a valid connection ID." }, 400);
   }
   const record = await getAgentConnectionById(connectionId);
-  return record
-    ? reply({
-        connectionId: record.id,
-        agentName: record.agent_name,
-        state: connectionState(record),
-        installed: Boolean(record.installed_at),
-        handoffExpiresAt:
-          record.installed_at &&
-          !record.claim_opened_at &&
-          !record.revoked_at &&
-          record.claim_expires_at > new Date().toISOString()
-            ? record.claim_expires_at
-            : null,
-      })
-    : reply({ error: "Connection not found." }, 404);
+  if (!record) return reply({ error: "Connection not found." }, 404);
+
+  let state = connectionState(record);
+  if (state === "connected" && record.session_id) {
+    try {
+      const gmail = await getGmailConnectionStatus(
+        runtime.COMPOSIO_API_KEY,
+        record.session_id,
+      );
+      const bindingReason = confirmedGmailReconnectReason(record, gmail);
+      const probe =
+        !bindingReason && gmail.active && gmail.connectedAccountId
+          ? await probeGmailMetadata(
+              runtime.COMPOSIO_API_KEY,
+              gmail.connectedAccountId,
+            )
+          : null;
+      if (
+        (bindingReason || confirmedGmailReconnectReason(record, gmail, probe)) &&
+        (await markAgentConnectionNeedsReconnect(record.id))
+      ) {
+        state = "needs_reconnect";
+      }
+    } catch {
+      // A timeout, provider outage, or unreadable response is not proof that
+      // the user's authorization expired. Keep the last confirmed state.
+    }
+  }
+
+  return reply({
+    connectionId: record.id,
+    agentName: record.agent_name,
+    state,
+    installed: Boolean(record.installed_at),
+    handoffExpiresAt:
+      record.installed_at &&
+      !record.claim_opened_at &&
+      !record.revoked_at &&
+      record.claim_expires_at > new Date().toISOString()
+        ? record.claim_expires_at
+        : null,
+  });
 }
 
 function matchesProvisioningRequest(
