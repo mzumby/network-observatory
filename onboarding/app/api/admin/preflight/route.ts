@@ -1,5 +1,6 @@
 import {
   GMAIL_METADATA_SCOPE,
+  getGmailConnectionStatus,
   inspectGmailAuthConfig,
   probeGmailMetadata,
 } from "@/lib/composio";
@@ -39,6 +40,7 @@ export async function GET(request: Request) {
     const live = await checkLiveGmail(
       runtime.COMPOSIO_API_KEY,
       getLiveGmailSession,
+      getGmailConnectionStatus,
       probeGmailMetadata,
     );
     const ok = authConfig.verified && live.ok !== false;
