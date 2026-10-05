@@ -10,7 +10,7 @@ network database that shared an email address.
 - **Hosted agent (Hermes or Agent37):** do not run the local OAuth script and
   do not ask for a client JSON, Google secret, or Composio key. Use this exact
   agent's `network-observatory-gmail` tools when they are configured. If setup
-  is needed, use its **Connections > Gmail** control in AgentMarkit when that
+  is needed, use its **Connections > Gmail metadata** control in AgentMarkit when that
   control exists. If it is absent, say setup is unavailable for this agent.
   Never substitute a generic Connect page, an old Worker link, a manual
   command, or a broad Gmail or Composio connection.
@@ -75,7 +75,7 @@ the agent and exposes only the two metadata tools used below.
 
 If this exact agent already has a working `network-observatory-gmail`
 connection, use it. If not, setup starts from the exact agent in AgentMarkit,
-then **Connections > Gmail**, only when that control exists; otherwise say
+then **Connections > Gmail metadata**, only when that control exists; otherwise say
 Gmail is not available on this agent yet. Do not use the retired Connect page,
 ask for a private manual setup command, open a default Composio or Gmail
 connection, send a provider reconnect link, or re-provision a legacy connection.
@@ -106,7 +106,7 @@ script would have produced. Store who and when, not what was said.
 
 The hosted tools cannot return subject, snippet, body, or attachments. If a
 tool says Gmail needs to be reconnected, tell the user to open this agent in
-AgentMarkit and choose **Connections > Gmail**. AgentMarkit must remove the old
+AgentMarkit and choose **Connections > Gmail metadata**. AgentMarkit must remove the old
 grant, finish its Composio cleanup, provision a fresh grant, and ask the
 signed-in owner to approve Google again. While the Google OAuth app remains in
 Testing, this may be needed again after seven days.

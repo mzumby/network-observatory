@@ -2,7 +2,7 @@
 
 > **Operator-only runbook.** Customers and agents should not follow these
 > provisioning commands. Their only setup entry point is the exact agent's
-> **Connections > Gmail** control in AgentMarkit.
+> **Connections > Gmail metadata** control in AgentMarkit.
 
 This runbook covers the AgentMarkit Gmail metadata connection and the controlled
 Day test. The customer flow is not live yet. Each customer will connect their
@@ -338,7 +338,7 @@ instead of reusing its Composio session.
 
 ## Intended customer flow
 
-1. They open their agent in AgentMarkit and choose **Connections > Gmail**.
+1. They open their agent in AgentMarkit and choose **Connections > Gmail metadata**.
 2. The Connect page names the agent and explains what it can access.
 3. They click **Continue to Google** and choose their account.
 4. The page waits for confirmation before it says Gmail is connected.

@@ -260,7 +260,7 @@ and the connection returns only allowlisted sender, recipient, date, label, and
 ID metadata. Feed those events to `trellis.py ingest` as described in
 `skills/email-recency.md`.
 
-Gmail setup starts from the exact agent's **Connections > Gmail** page in
+Gmail setup starts from the exact agent's **Connections > Gmail metadata** page in
 AgentMarkit. After checking the signed-in owner and machine, AgentMarkit asks
 Network Observatory for a one-use handoff with those same owner and installation
 references. Network Observatory checks both again. AgentMarkit puts the token in
@@ -268,7 +268,7 @@ a per-connection HttpOnly cookie for at most five minutes. The browser receives
 only a non-secret Connect address. Never send a setup token or manual Connect
 link in chat.
 
-Use this route only when that exact agent has a **Connections > Gmail** control
+Use this route only when that exact agent has a **Connections > Gmail metadata** control
 in AgentMarkit. If the control is absent, say Gmail setup is unavailable for
 this agent. Do not improvise with a generic Connect page, an old Worker link, a
 manual command, or a broad Gmail or Composio connection.

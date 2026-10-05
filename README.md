@@ -91,7 +91,7 @@ before it starts Google approval. Separate agent setups do not overwrite each
 other.
 
 On a hosted agent, Gmail setup is available only when that exact agent has a
-**Connections > Gmail** control in AgentMarkit. When it is there, the owner uses
+**Connections > Gmail metadata** control in AgentMarkit. When it is there, the owner uses
 that control, reviews the narrow access, and continues to Google. When it is
 absent, the agent should say setup is unavailable and wait. It must not fall
 back to a generic Connect page, an old Worker link, a manual command, or a broad

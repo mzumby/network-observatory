@@ -60,13 +60,13 @@ provider reconnect link.
 
 If `network-observatory-gmail` is already configured on this agent, use those
 tools. If it is not configured, offer setup only when this exact agent has a
-**Connections > Gmail** control in AgentMarkit. When the control exists, tell
+**Connections > Gmail metadata** control in AgentMarkit. When the control exists, tell
 the user to open it. When it is absent, say Gmail setup is unavailable for this
 agent. Never work around that by using a generic Connect page, an old Worker
 link, a manual command, your own Composio toolkit, or another default Gmail
 tool. Those routes can expose credentials or request broader mailbox access.
 
-Setup must begin on this exact agent's **Connections > Gmail** page.
+Setup must begin on this exact agent's **Connections > Gmail metadata** page.
 AgentMarkit checks the signed-in owner and machine, then asks Network Observatory
 for a one-use handoff with the verified owner and installation references.
 Network Observatory checks both again. AgentMarkit puts the token in a
@@ -81,7 +81,7 @@ themselves."
 If the user says yes:
 
 1. Ask them to open this agent in AgentMarkit and choose **Connections >
-   Gmail**.
+   Gmail metadata**.
 2. Check that the page names this agent. The page explains what the connection
    can and cannot use.
 3. Have them choose **Continue to Google** and approve the account they want to
@@ -115,7 +115,7 @@ correspondents locally.
 
 If a Gmail tool says the connection is unavailable or needs to be reconnected,
 do not give the user a provider link from the tool result. Tell them to open
-this agent in AgentMarkit and choose **Connections > Gmail**. AgentMarkit must
+this agent in AgentMarkit and choose **Connections > Gmail metadata**. AgentMarkit must
 revoke the old local grant, finish its Composio cleanup, provision a fresh
 grant, install the new bearer privately, and ask the signed-in owner to approve
 Google again. Google test access may require this after seven days.
