@@ -9,6 +9,7 @@ import {
   deleteConnectedAccount,
   deleteSession,
   findGmailConnectedAccount,
+  getGmailAccountEmail,
   getGmailConnectionStatus,
   probeGmailMetadata,
 } from "@/lib/composio";
@@ -102,7 +103,9 @@ export async function GET(request: Request) {
   if (!(await authorized(request, runtime.INVITE_ADMIN_TOKEN))) {
     return reply({ error: "Unauthorized" }, 401);
   }
-  const connectionId = textField(new URL(request.url).searchParams.get("connectionId"));
+  const query = new URL(request.url).searchParams;
+  const connectionId = textField(query.get("connectionId"));
+  const includeAccountEmail = query.get("includeAccountEmail") === "1";
   if (!CONNECTION_ID_RE.test(connectionId)) {
     return reply({ error: "Provide a valid connection ID." }, 400);
   }
@@ -110,6 +113,7 @@ export async function GET(request: Request) {
   if (!record) return reply({ error: "Connection not found." }, 404);
 
   let state = connectionState(record);
+  let accountEmail: string | null = null;
   if (state === "connected" && record.session_id) {
     try {
       const gmail = await getGmailConnectionStatus(
@@ -124,11 +128,27 @@ export async function GET(request: Request) {
               gmail.connectedAccountId,
             )
           : null;
-      if (
-        (bindingReason || confirmedGmailReconnectReason(record, gmail, probe)) &&
-        (await markAgentConnectionNeedsReconnect(record.id))
+      const reconnectReason =
+        bindingReason || confirmedGmailReconnectReason(record, gmail, probe);
+      if (reconnectReason) {
+        if (await markAgentConnectionNeedsReconnect(record.id)) {
+          state = "needs_reconnect";
+        }
+      } else if (
+        includeAccountEmail &&
+        gmail.active &&
+        typeof gmail.connectedAccountId === "string" &&
+        gmail.connectedAccountId === record.connected_account_id
       ) {
-        state = "needs_reconnect";
+        try {
+          accountEmail = await getGmailAccountEmail(
+            runtime.COMPOSIO_API_KEY,
+            gmail.connectedAccountId,
+          );
+        } catch {
+          // Identity is optional. A failed profile read cannot change the
+          // connection's confirmed health or reveal provider error details.
+        }
       }
     } catch {
       // A timeout, provider outage, or unreadable response is not proof that
@@ -140,6 +160,7 @@ export async function GET(request: Request) {
     connectionId: record.id,
     agentName: record.agent_name,
     state,
+    ...(includeAccountEmail ? { accountEmail } : {}),
     installed: Boolean(record.installed_at),
     handoffExpiresAt:
       record.installed_at &&

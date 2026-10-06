@@ -430,6 +430,30 @@ function redactConnectedAccountIds(value: string) {
   return value.replace(/ca_[A-Za-z0-9_-]+/g, "[connected account]");
 }
 
+// The Gmail profile contains mailbox counts and a history ID as well. Only the
+// address is needed to identify the account to its owner.
+export async function getGmailAccountEmail(
+  apiKey: string,
+  connectedAccountId: string,
+): Promise<string | null> {
+  const profile = asRecord(
+    await gmailProxy(
+      apiKey,
+      connectedAccountId,
+      "https://gmail.googleapis.com/gmail/v1/users/me/profile",
+    ),
+  );
+  const email = profile.emailAddress;
+  if (
+    typeof email !== "string" ||
+    email.length > 254 ||
+    !/^[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)+$/.test(email)
+  ) {
+    return null;
+  }
+  return email;
+}
+
 export async function getGmailMessageMetadata(
   apiKey: string,
   connectedAccountId: string,

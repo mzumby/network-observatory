@@ -515,6 +515,13 @@ handoff. If the owner closes the Connect tab before Google authorization
 starts, choosing **Connect Gmail** again replaces the abandoned browser flow
 and invalidates its old tab tokens.
 
+The owner-checked Gmail settings view may add `includeAccountEmail=1` to that
+admin GET. Only for a confirmed active account bound to the saved grant, the
+response adds `accountEmail` from Gmail's profile API, or `null` if identity
+lookup fails. This is a display-only lookup: the service does not persist the
+address or change connection health when the profile request fails. Routine
+status polling must omit this flag.
+
 During the testing period, the operator must also add the person's exact Gmail
 address under **Google Auth platform > Audience > Test users**.
 

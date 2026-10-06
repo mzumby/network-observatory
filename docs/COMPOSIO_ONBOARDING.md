@@ -305,6 +305,15 @@ that the authorization is no longer usable. Scope refusals, quota responses,
 timeouts, transport errors, and provider outages leave the last confirmed state
 unchanged.
 
+For the signed-in owner's Gmail settings view, AgentMarkit's server may add
+`includeAccountEmail=1` to this admin GET. If the saved grant is still bound to
+an active Gmail account, the response adds `accountEmail` from Gmail's
+`users/me/profile` endpoint. It is `null` when the identity cannot be confirmed.
+Ordinary status checks omit this field and do not make the profile request.
+The email address is never saved to D1, and profile lookup failures do not
+change the connection state. AgentMarkit must check the owner before sending
+this value to a browser.
+
 After the owner and machine check, AgentMarkit calls PATCH again with
 `issueHandoff: true`, plus the same `ownerRef` and `installationRef` used to
 create the connection. Network Observatory checks those values against the

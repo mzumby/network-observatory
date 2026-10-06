@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { afterEach, test } from "node:test";
 
 import {
+  getGmailAccountEmail,
   getGmailMessageMetadata,
   sweepGmailMetadata,
 } from "../lib/composio.ts";
@@ -18,6 +19,59 @@ function jsonResponse(body) {
     headers: { "content-type": "application/json" },
   });
 }
+
+test("Gmail profile returns only the address from the bound connected account", async () => {
+  globalThis.fetch = async (url, init) => {
+    assert.equal(url, "https://backend.composio.dev/api/v3.1/tools/execute/proxy");
+    assert.equal(init?.method, "POST");
+    const body = JSON.parse(String(init?.body || "{}"));
+    assert.deepEqual(body, {
+      connected_account_id: "ca_test",
+      endpoint: "https://gmail.googleapis.com/gmail/v1/users/me/profile",
+      method: "GET",
+    });
+    return jsonResponse({
+      status: 200,
+      data: {
+        emailAddress: "owner+test@example.com",
+        messagesTotal: 1200,
+        threadsTotal: 400,
+        historyId: "private-history",
+      },
+    });
+  };
+
+  assert.equal(
+    await getGmailAccountEmail("test-key", "ca_test"),
+    "owner+test@example.com",
+  );
+});
+
+test("Gmail profile ignores malformed and missing account identities", async () => {
+  let calls = 0;
+  globalThis.fetch = async () => {
+    calls += 1;
+    return jsonResponse({ status: 200, data: { emailAddress: "owner@example.com" } });
+  };
+  await assert.rejects(
+    getGmailAccountEmail("test-key", "ca_bad!"),
+    /missing a valid connected account/,
+  );
+  assert.equal(calls, 0);
+
+  for (const emailAddress of [
+    undefined,
+    27,
+    "owner@example.com\n",
+    "owner@@example.com",
+    "owner@example.com<script>",
+    `${"a".repeat(245)}@example.com`,
+  ]) {
+    globalThis.fetch = async () =>
+      jsonResponse({ status: 200, data: { emailAddress } });
+    assert.equal(await getGmailAccountEmail("test-key", "ca_test"), null);
+  }
+});
 
 test("Gmail proxy uses the project endpoint with an explicit connected account", async () => {
   globalThis.fetch = async (url, init) => {
