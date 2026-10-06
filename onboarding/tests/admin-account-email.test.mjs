@@ -2,6 +2,9 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { afterEach, test } from "node:test";
 import ts from "typescript";
+import { getGmailAccountEmail } from "../lib/composio.ts";
+
+const originalFetch = globalThis.fetch;
 
 // Run the actual admin GET with stubbed services, keeping its authorization,
 // provider-binding, and response branches under test without a live grant.
@@ -97,9 +100,9 @@ function mockServices({ record = baseRecord, status, probe, profile } = {}) {
       calls.probe += 1;
       return probe ? probe() : { ok: true, status: 200, reason: "" };
     },
-    getGmailAccountEmail: async () => {
+    getGmailAccountEmail: async (...args) => {
       calls.profile += 1;
-      return profile ? profile() : "owner@example.com";
+      return profile ? profile(...args) : "owner@example.com";
     },
     markAgentConnectionNeedsReconnect: async () => {
       calls.reconnect += 1;
@@ -111,6 +114,7 @@ function mockServices({ record = baseRecord, status, probe, profile } = {}) {
 
 afterEach(() => {
   delete globalThis.__gmailAdminMocks;
+  globalThis.fetch = originalFetch;
 });
 
 test("admin GET resolves profile and metadata concurrently only when requested", async () => {
@@ -193,4 +197,37 @@ test("a profile failure leaves the confirmed connection state alone", async () =
   assert.equal(body.state, "connected");
   assert.equal(body.accountEmail, null);
   assert.equal(calls.reconnect, 0);
+});
+
+test("a slow profile proxy is aborted while healthy Gmail stays connected", async () => {
+  let aborted = false;
+  const calls = mockServices({ profile: getGmailAccountEmail });
+  globalThis.fetch = async (url, init) => {
+    assert.equal(url, "https://backend.composio.dev/api/v3.1/tools/execute/proxy");
+    const body = JSON.parse(String(init?.body || "{}"));
+    assert.equal(body.connected_account_id, "ca_expected");
+    assert.equal(body.endpoint, "https://gmail.googleapis.com/gmail/v1/users/me/profile");
+    const signal = init?.signal;
+    assert.ok(signal instanceof AbortSignal);
+    return new Promise((_, reject) => {
+      if (signal.aborted) {
+        aborted = true;
+        reject(signal.reason);
+      } else {
+        signal.addEventListener("abort", () => {
+          aborted = true;
+          reject(signal.reason);
+        }, { once: true });
+      }
+    });
+  };
+
+  const started = Date.now();
+  const body = await (await GET(request(true))).json();
+  assert.equal(body.state, "connected");
+  assert.equal(body.accountEmail, null);
+  assert.equal(calls.profile, 1);
+  assert.equal(calls.reconnect, 0);
+  assert.equal(aborted, true);
+  assert.ok(Date.now() - started < 8_000);
 });

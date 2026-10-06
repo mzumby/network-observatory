@@ -311,8 +311,9 @@ an active Gmail account, the response adds `accountEmail` from Gmail's
 `users/me/profile` endpoint. It is `null` when the identity cannot be confirmed.
 Ordinary status checks omit this field and do not make the profile request.
 The email address is never saved to D1, and profile lookup failures do not
-change the connection state. AgentMarkit must check the owner before sending
-this value to a browser.
+change the connection state. The optional profile request is aborted after 3.5
+seconds so it cannot hold up a healthy status response. AgentMarkit must check
+the owner before sending this value to a browser.
 
 After the owner and machine check, AgentMarkit calls PATCH again with
 `issueHandoff: true`, plus the same `ownerRef` and `installationRef` used to
