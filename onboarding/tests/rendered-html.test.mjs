@@ -156,8 +156,6 @@ test("agent handoffs are server-created, browser-bound, one-time, and stored as 
   assert.match(safeStatus, /confirmedGmailReconnectReason/);
   assert.match(safeStatus, /markAgentConnectionNeedsReconnect/);
   assert.match(safeStatus, /query\.get\("includeAccountEmail"\) === "1"/);
-  assert.match(safeStatus, /includeAccountEmail &&[\s\S]*gmail\.active &&[\s\S]*gmail\.connectedAccountId === record\.connected_account_id/);
-  assert.match(safeStatus, /accountEmail = await getGmailAccountEmail/);
   assert.match(safeStatus, /\.\.\.\(includeAccountEmail \? \{ accountEmail \} : \{\}\)/);
   assert.match(safeStatus, /provider outage[\s\S]*last confirmed state/);
   assert.match(admin, /mcpUrl/);

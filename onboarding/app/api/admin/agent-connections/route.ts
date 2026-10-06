@@ -121,34 +121,31 @@ export async function GET(request: Request) {
         record.session_id,
       );
       const bindingReason = confirmedGmailReconnectReason(record, gmail);
-      const probe =
-        !bindingReason && gmail.active && gmail.connectedAccountId
-          ? await probeGmailMetadata(
-              runtime.COMPOSIO_API_KEY,
-              gmail.connectedAccountId,
-            )
+      const boundAccountId =
+        !bindingReason &&
+        gmail.active &&
+        typeof gmail.connectedAccountId === "string" &&
+        gmail.connectedAccountId === record.connected_account_id
+          ? gmail.connectedAccountId
           : null;
+      const [probe, profileEmail] = boundAccountId
+        ? await Promise.all([
+            probeGmailMetadata(runtime.COMPOSIO_API_KEY, boundAccountId),
+            includeAccountEmail
+              ? getGmailAccountEmail(runtime.COMPOSIO_API_KEY, boundAccountId).catch(
+                  () => null,
+                )
+              : Promise.resolve(null),
+          ])
+        : [null, null];
       const reconnectReason =
         bindingReason || confirmedGmailReconnectReason(record, gmail, probe);
       if (reconnectReason) {
         if (await markAgentConnectionNeedsReconnect(record.id)) {
           state = "needs_reconnect";
         }
-      } else if (
-        includeAccountEmail &&
-        gmail.active &&
-        typeof gmail.connectedAccountId === "string" &&
-        gmail.connectedAccountId === record.connected_account_id
-      ) {
-        try {
-          accountEmail = await getGmailAccountEmail(
-            runtime.COMPOSIO_API_KEY,
-            gmail.connectedAccountId,
-          );
-        } catch {
-          // Identity is optional. A failed profile read cannot change the
-          // connection's confirmed health or reveal provider error details.
-        }
+      } else if (includeAccountEmail && probe?.ok === true) {
+        accountEmail = profileEmail;
       }
     } catch {
       // A timeout, provider outage, or unreadable response is not proof that
