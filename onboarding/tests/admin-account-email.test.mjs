@@ -210,14 +210,21 @@ test("a slow profile proxy is aborted while healthy Gmail stays connected", asyn
     const signal = init?.signal;
     assert.ok(signal instanceof AbortSignal);
     return new Promise((_, reject) => {
-      if (signal.aborted) {
+      // AbortSignal.timeout() does not keep Node's event loop alive. Keep this
+      // mocked request pending with a ref'd watchdog so CI observes the abort.
+      const watchdog = setTimeout(() => {
+        signal.removeEventListener("abort", onAbort);
+        reject(new Error("The Gmail profile request did not abort."));
+      }, 7_000);
+      const onAbort = () => {
+        clearTimeout(watchdog);
         aborted = true;
         reject(signal.reason);
+      };
+      if (signal.aborted) {
+        onAbort();
       } else {
-        signal.addEventListener("abort", () => {
-          aborted = true;
-          reject(signal.reason);
-        }, { once: true });
+        signal.addEventListener("abort", onAbort, { once: true });
       }
     });
   };
