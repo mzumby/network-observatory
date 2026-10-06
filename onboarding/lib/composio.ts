@@ -2,6 +2,7 @@ import { sanitizeGmailMessage } from "./gmail-metadata.mjs";
 
 const COMPOSIO_API = "https://backend.composio.dev/api/v3.1";
 const COMPOSIO_TIMEOUT_MS = 20_000;
+const GMAIL_ACCOUNT_PROFILE_TIMEOUT_MS = 3_500;
 
 interface SessionResponse {
   session_id: string;
@@ -390,6 +391,7 @@ async function gmailProxy(
   apiKey: string,
   connectedAccountId: string,
   endpoint: string,
+  signal?: AbortSignal,
 ) {
   if (!/^ca_[A-Za-z0-9_-]{1,124}$/.test(connectedAccountId)) {
     throw new Error("The Gmail connection is missing a valid connected account.");
@@ -399,6 +401,7 @@ async function gmailProxy(
     "/tools/execute/proxy",
     {
       method: "POST",
+      signal,
       body: JSON.stringify({
         connected_account_id: connectedAccountId,
         endpoint,
@@ -428,6 +431,31 @@ function asRecord(value: unknown): Record<string, unknown> {
 
 function redactConnectedAccountIds(value: string) {
   return value.replace(/ca_[A-Za-z0-9_-]+/g, "[connected account]");
+}
+
+// The Gmail profile contains mailbox counts and a history ID as well. Only the
+// address is needed to identify the account to its owner.
+export async function getGmailAccountEmail(
+  apiKey: string,
+  connectedAccountId: string,
+): Promise<string | null> {
+  const profile = asRecord(
+    await gmailProxy(
+      apiKey,
+      connectedAccountId,
+      "https://gmail.googleapis.com/gmail/v1/users/me/profile",
+      AbortSignal.timeout(GMAIL_ACCOUNT_PROFILE_TIMEOUT_MS),
+    ),
+  );
+  const email = profile.emailAddress;
+  if (
+    typeof email !== "string" ||
+    email.length > 254 ||
+    !/^[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)+$/.test(email)
+  ) {
+    return null;
+  }
+  return email;
 }
 
 export async function getGmailMessageMetadata(

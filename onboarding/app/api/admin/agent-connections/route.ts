@@ -9,6 +9,7 @@ import {
   deleteConnectedAccount,
   deleteSession,
   findGmailConnectedAccount,
+  getGmailAccountEmail,
   getGmailConnectionStatus,
   probeGmailMetadata,
 } from "@/lib/composio";
@@ -102,7 +103,9 @@ export async function GET(request: Request) {
   if (!(await authorized(request, runtime.INVITE_ADMIN_TOKEN))) {
     return reply({ error: "Unauthorized" }, 401);
   }
-  const connectionId = textField(new URL(request.url).searchParams.get("connectionId"));
+  const query = new URL(request.url).searchParams;
+  const connectionId = textField(query.get("connectionId"));
+  const includeAccountEmail = query.get("includeAccountEmail") === "1";
   if (!CONNECTION_ID_RE.test(connectionId)) {
     return reply({ error: "Provide a valid connection ID." }, 400);
   }
@@ -110,6 +113,7 @@ export async function GET(request: Request) {
   if (!record) return reply({ error: "Connection not found." }, 404);
 
   let state = connectionState(record);
+  let accountEmail: string | null = null;
   if (state === "connected" && record.session_id) {
     try {
       const gmail = await getGmailConnectionStatus(
@@ -117,18 +121,31 @@ export async function GET(request: Request) {
         record.session_id,
       );
       const bindingReason = confirmedGmailReconnectReason(record, gmail);
-      const probe =
-        !bindingReason && gmail.active && gmail.connectedAccountId
-          ? await probeGmailMetadata(
-              runtime.COMPOSIO_API_KEY,
-              gmail.connectedAccountId,
-            )
+      const boundAccountId =
+        !bindingReason &&
+        gmail.active &&
+        typeof gmail.connectedAccountId === "string" &&
+        gmail.connectedAccountId === record.connected_account_id
+          ? gmail.connectedAccountId
           : null;
-      if (
-        (bindingReason || confirmedGmailReconnectReason(record, gmail, probe)) &&
-        (await markAgentConnectionNeedsReconnect(record.id))
-      ) {
-        state = "needs_reconnect";
+      const [probe, profileEmail] = boundAccountId
+        ? await Promise.all([
+            probeGmailMetadata(runtime.COMPOSIO_API_KEY, boundAccountId),
+            includeAccountEmail
+              ? getGmailAccountEmail(runtime.COMPOSIO_API_KEY, boundAccountId).catch(
+                  () => null,
+                )
+              : Promise.resolve(null),
+          ])
+        : [null, null];
+      const reconnectReason =
+        bindingReason || confirmedGmailReconnectReason(record, gmail, probe);
+      if (reconnectReason) {
+        if (await markAgentConnectionNeedsReconnect(record.id)) {
+          state = "needs_reconnect";
+        }
+      } else if (includeAccountEmail && probe?.ok === true) {
+        accountEmail = profileEmail;
       }
     } catch {
       // A timeout, provider outage, or unreadable response is not proof that
@@ -140,6 +157,7 @@ export async function GET(request: Request) {
     connectionId: record.id,
     agentName: record.agent_name,
     state,
+    ...(includeAccountEmail ? { accountEmail } : {}),
     installed: Boolean(record.installed_at),
     handoffExpiresAt:
       record.installed_at &&
