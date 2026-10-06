@@ -2,7 +2,7 @@
 
 > **Operator-only runbook.** Customers and agents should not follow these
 > account, credential, deployment, or migration steps. Their only setup entry
-> point is the exact agent's **Gmail metadata** connection page in AgentMarkit.
+> point is the exact agent's **Connections > Gmail metadata** page in AgentMarkit.
 
 This guide recreates the Network Observatory Gmail integration under a new
 Composio account and a new Google Cloud project. It also explains how
@@ -528,7 +528,7 @@ address under **Google Auth platform > Audience > Test users**.
 ### What the person does
 
 1. Opens their agent in AgentMarkit.
-2. Opens **Gmail metadata**.
+2. Chooses **Connections > Gmail metadata**.
 3. Checks the short explanation of what the agent can access.
 4. Chooses **Continue to Google** and approves their account.
 5. Waits for the page to confirm the connection.
